@@ -30,7 +30,7 @@ Options:
 
 Environment:
   GITGUMBO_TOKEN         API token (ggb_...), from <url>/settings/api
-  GITGUMBO_URL           default ${DEFAULT_URL}
+  GITGUMBO_URL           default ${DEFAULT_URL}; must be https
   GITGUMBO_PROJECT       default project(s), comma-separated
 
 Exit codes: 0 found, 1 not found, 2 usage or config, 3 token or plan
@@ -111,22 +111,49 @@ function commandOf(positionals) {
   throw new CliError(`Unexpected argument "${second}". See gitgumbo --help.`, EXIT.USAGE);
 }
 
-/** @param {Record<string, string | undefined>} env */
+// GitGumbo mints "ggb_" + base64url; anything else in the value is a paste error.
+const TOKEN_SHAPE = /^ggb_[A-Za-z0-9_-]+$/;
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Read and check GITGUMBO_TOKEN and GITGUMBO_URL. No message repeats the token,
+ * and none repeats more of the URL than its origin.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ token: string, baseUrl: string }}  baseUrl: origin + path, no trailing slash
+ */
 export function config(env) {
+  const rawUrl = env.GITGUMBO_URL?.trim() || DEFAULT_URL;
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    throw new CliError("GITGUMBO_URL is not a URL.", EXIT.USAGE);
+  }
+  if (u.username || u.password) {
+    throw new CliError("GITGUMBO_URL must not contain a user name or password.", EXIT.USAGE);
+  }
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && LOOPBACK.has(u.hostname))) {
+    throw new CliError("GITGUMBO_URL must be https (http only for localhost).", EXIT.USAGE);
+  }
+  if (u.search || u.hash || rawUrl.includes("?") || rawUrl.includes("#")) {
+    throw new CliError("GITGUMBO_URL must not contain a query (?) or fragment (#).", EXIT.USAGE);
+  }
+  const baseUrl = u.origin + u.pathname.replace(/\/+$/, "");
+
   const token = env.GITGUMBO_TOKEN?.trim();
-  const baseUrl = env.GITGUMBO_URL?.trim() || DEFAULT_URL;
   if (!token) {
     throw new CliError(
-      `GITGUMBO_TOKEN is not set. Create a token at ${baseUrl}/settings/api, then: export GITGUMBO_TOKEN=ggb_...`,
+      `GITGUMBO_TOKEN is not set. Create a token at ${u.origin}/settings/api, then: export GITGUMBO_TOKEN=ggb_...`,
       EXIT.USAGE);
   }
   if (!token.startsWith("ggb_")) {
     throw new CliError("GITGUMBO_TOKEN does not look like a GitGumbo API token (they start with ggb_).", EXIT.USAGE);
   }
-  try {
-    new URL(baseUrl);
-  } catch {
-    throw new CliError(`GITGUMBO_URL is not a URL: ${baseUrl}`, EXIT.USAGE);
+  if (!TOKEN_SHAPE.test(token)) {
+    throw new CliError(
+      "GITGUMBO_TOKEN contains characters a GitGumbo API token never has. Copy it again, or create a new one.",
+      EXIT.USAGE);
   }
   return { token, baseUrl };
 }

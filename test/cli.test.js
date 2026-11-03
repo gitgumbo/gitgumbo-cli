@@ -348,3 +348,78 @@ test("--json keeps API text unchanged as a value but prints no raw control chara
   assert.equal(JSON.parse(e.out).error.message, `Not found (not_found): Gone${NASTY}`);
   assert.doesNotMatch(e.err, RAW_CONTROL);
 });
+
+// --- Configuration checks -------------------------------------------------------
+
+test("a token with characters a token never has is exit 2, not echoed, and sends nothing", async () => {
+  for (const bad of ["ggb_secretA\r\nX-Evil: 1", "ggb_secretA\nB", "ggb_secret\0A", "ggb_secret A", "ggb_secret!A"]) {
+    const { code, err, out, calls } = await run(["me", "--json"], { env: { GITGUMBO_TOKEN: bad }, routes: { "/me": me() } });
+    assert.equal(code, 2, JSON.stringify(bad));
+    assert.match(err, /GITGUMBO_TOKEN contains characters a GitGumbo API token never has/);
+    assert.doesNotMatch(err + out, /secret/, "the token value is never printed");
+    assert.equal(calls.length, 0);
+  }
+  assert.equal((await run(["me"], { env: { GITGUMBO_TOKEN: "ggb_Ab-9_z" }, routes: { "/me": me() } })).code, 0);
+});
+
+test("an error thrown before the request is sent is not echoed", async () => {
+  const early = new TypeError('Headers.append: "Bearer ggb_secret\nx" is an invalid header value.');
+  const { code, err } = await run(["me"], { routes: { "/me": early } });
+  assert.equal(code, 5);
+  assert.match(err, /Could not send the request to https:\/\/gg\.test\./);
+  assert.doesNotMatch(err, /secret|Bearer/);
+});
+
+test("a credential quoted in a network error's cause is redacted", async () => {
+  const down = Object.assign(new TypeError("fetch failed"), { cause: { message: "bad: Bearer ggb_secret" } });
+  const { code, err } = await run(["me"], { routes: { "/me": down } });
+  assert.equal(code, 5);
+  assert.doesNotMatch(err, /secret/);
+  assert.match(err, /Bearer \[redacted\]/);
+});
+
+test("a user name or password in GITGUMBO_URL is exit 2 and not echoed", async () => {
+  for (const url of ["https://alice:hunter2@gg.test", "https://hunter2@gg.test", "https://:hunter2@gg.test"]) {
+    const { code, err, calls } = await run(["me"], { env: { GITGUMBO_URL: url }, routes: { "/me": me() } });
+    assert.equal(code, 2, url);
+    assert.match(err, /must not contain a user name or password/);
+    assert.doesNotMatch(err, /hunter2|alice/);
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("messages name the server by its origin only", async () => {
+  const r = await run(["me"], {
+    env: { GITGUMBO_URL: "https://gg.test/" },
+    routes: { "/me": apiError(401, "token_revoked", "revoked") },
+  });
+  assert.equal(r.code, 3);
+  assert.match(r.err, /Create a new one at https:\/\/gg\.test\/settings\/api\./);
+  const n = await run(["me"], { env: { GITGUMBO_URL: "https://gg.test/", GITGUMBO_TOKEN: "" } });
+  assert.match(n.err, /Create a token at https:\/\/gg\.test\/settings\/api,/);
+});
+
+test("GITGUMBO_URL must be https, except http on loopback", async () => {
+  for (const url of ["http://gg.test", "ftp://gg.test", "file:///etc/passwd", "javascript:alert(1)", "http://10.0.0.1"]) {
+    const { code, err, calls } = await run(["me"], { env: { GITGUMBO_URL: url }, routes: { "/me": me() } });
+    assert.equal(code, 2, url);
+    assert.match(err, /GITGUMBO_URL must be https/);
+    assert.equal(calls.length, 0);
+  }
+  for (const url of ["http://localhost:3033", "http://127.0.0.1:3033", "http://[::1]:3033", "https://gg.test"]) {
+    const { code, calls } = await run(["me"], { env: { GITGUMBO_URL: url }, routes: { "/me": me() } });
+    assert.equal(code, 0, url);
+    assert.equal(calls[0].url.href, `${url}/api/v1/me`);
+  }
+});
+
+test("a query or fragment in GITGUMBO_URL is exit 2; a path is kept", async () => {
+  for (const url of ["https://gg.test/?x=1", "https://gg.test?", "https://gg.test/#frag", "https://gg.test#"]) {
+    const { code, err, calls } = await run(["me"], { env: { GITGUMBO_URL: url }, routes: { "/me": me() } });
+    assert.equal(code, 2, url);
+    assert.match(err, /must not contain a query \(\?\) or fragment \(#\)/);
+    assert.equal(calls.length, 0);
+  }
+  const { calls } = await run(["me"], { env: { GITGUMBO_URL: "https://gg.test/gitgumbo/" } });
+  assert.equal(calls[0].url.href, "https://gg.test/gitgumbo/api/v1/me");
+});

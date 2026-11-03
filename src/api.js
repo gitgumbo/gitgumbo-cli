@@ -37,7 +37,9 @@ export class CliError extends Error {
  * @param {{ baseUrl: string, token: string, fetch?: typeof fetch, timeoutMs?: number }} options
  */
 export function createClient({ baseUrl, token, fetch = globalThis.fetch, timeoutMs = 15_000 }) {
-  const root = `${baseUrl.replace(/\/+$/, "")}/api/v1`;
+  const base = new URL(baseUrl);
+  const root = `${base.origin}${base.pathname.replace(/\/+$/, "")}/api/v1`;
+  const server = base.origin; // the only part of the URL a message repeats
 
   /**
    * @param {string} path  e.g. "/projects"
@@ -61,12 +63,12 @@ export function createClient({ baseUrl, token, fetch = globalThis.fetch, timeout
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
-      throw networkError(baseUrl, err);
+      throw networkError(server, err);
     }
 
     const body = await res.json().catch(() => null);
     if (res.ok && body !== null) return body;
-    throw httpError(res, body, baseUrl);
+    throw httpError(res, body, server);
   }
 
   /**
@@ -109,16 +111,29 @@ export function createClient({ baseUrl, token, fetch = globalThis.fetch, timeout
   return { get, find, all };
 }
 
-/** @param {string} baseUrl @param {any} err */
-function networkError(baseUrl, err) {
-  const reason =
-    err?.name === "TimeoutError" ? "timed out"
-    : err?.cause?.code ?? err?.cause?.message ?? err?.message ?? String(err);
-  return new CliError(`Could not reach ${baseUrl}: ${reason}`, EXIT.UNAVAILABLE);
+/**
+ * undici rejects with TypeError("fetch failed") once the request was attempted;
+ * any other error was thrown before it was sent (an invalid header, say), and
+ * its message may quote the request, token included. Only the first kind's
+ * cause is shown.
+ *
+ * @param {string} server  origin only
+ * @param {any} err
+ */
+function networkError(server, err) {
+  if (err?.name === "TimeoutError") return new CliError(`Could not reach ${server}: timed out`, EXIT.UNAVAILABLE);
+  if (err?.message !== "fetch failed") {
+    return new CliError(`Could not send the request to ${server}.`, EXIT.UNAVAILABLE);
+  }
+  const reason = err.cause?.code ?? err.cause?.message ?? "connection failed";
+  return new CliError(`Could not reach ${server}: ${redact(String(reason))}`, EXIT.UNAVAILABLE);
 }
 
-/** @param {Response} res @param {any} body @param {string} baseUrl */
-function httpError(res, body, baseUrl) {
+/** A backstop: never print a credential, whatever a cause message quotes. */
+const redact = (s) => s.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").replace(/ggb_[A-Za-z0-9_-]+/g, "ggb_[redacted]");
+
+/** @param {Response} res @param {any} body @param {string} server  origin only */
+function httpError(res, body, server) {
   const code = body?.error?.code;
   const detail = body?.error?.message ?? res.statusText;
   const details = { status: res.status, code };
@@ -127,7 +142,7 @@ function httpError(res, body, baseUrl) {
   switch (res.status) {
     case 401:
       return new CliError(
-        `Token rejected${tag}: ${detail}. Create a new one at ${baseUrl}/settings/api.`,
+        `Token rejected${tag}: ${detail}. Create a new one at ${server}/settings/api.`,
         EXIT.AUTH, details);
     case 402:
       return new CliError(`${detail}${tag}. The GitGumbo API needs a Pro or Team plan.`, EXIT.AUTH, details);

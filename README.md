@@ -58,7 +58,7 @@ export GITGUMBO_TOKEN=ggb_...
 | Variable           | Meaning                                                        |
 | ------------------ | -------------------------------------------------------------- |
 | `GITGUMBO_TOKEN`   | Required. Your API token.                                      |
-| `GITGUMBO_URL`     | Optional. Defaults to `https://gitgumbo.com`.                  |
+| `GITGUMBO_URL`     | Optional. Defaults to `https://gitgumbo.com`. Must be https (http only for `localhost`, `127.0.0.1` or `[::1]`), with no user name, password, query or fragment. |
 | `GITGUMBO_PROJECT` | Optional. The default project(s) to search, comma-separated.   |
 | `NO_COLOR`         | Optional. Set it to turn colour off.                           |
 
