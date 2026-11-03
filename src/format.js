@@ -87,7 +87,8 @@ function review(mr, paint) {
 /** The one-line health summary of a merge request. */
 export function mrStatus(mr, paint) {
   mr = scrub(mr);
-  const parts = [mr.draft ? paint.dim("draft") : STATE[mr.state] ?? mr.state];
+  const parts = [STATE[mr.state] ?? mr.state];
+  if (mr.draft) parts.push(paint.dim("draft"));
   if (mr.state !== "opened") return parts.join(" · ");
 
   parts.push(pipeline(mr.pipelineStatus, paint));

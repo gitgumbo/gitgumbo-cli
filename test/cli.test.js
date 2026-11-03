@@ -497,3 +497,26 @@ test("a project that fails with no match anywhere is reported as the error", asy
   assert.match(err, /GitGumbo API error 500 \(internal\): boom/);
   assert.doesNotMatch(err, /warning/);
 });
+
+// --- Draft merge requests -----------------------------------------------------------
+
+test("a draft MR shows its state as well as the draft mark", async () => {
+  const r = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([], { board: null }),
+      "/projects/proj_gl/issues": page([issue({
+        state: "closed",
+        linkedMergeRequests: [mrCompact({ state: "merged", draft: true }), mrCompact({ number: 306, state: "closed", draft: true })],
+      })]),
+    },
+  });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /!305 .*\n {4}merged · draft$/m);
+  assert.match(r.out, /!306 .*\n {4}closed · draft$/m);
+
+  const o = await run(["!305"], {
+    routes: { "/projects": page([gitlab]), "/projects/proj_gl/merge-requests": page([mr({ draft: true })]) },
+  });
+  assert.match(o.out, /^ {2}open · draft · pipeline failed · conflicts/m);
+});

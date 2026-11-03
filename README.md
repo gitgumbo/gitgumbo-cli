@@ -14,7 +14,7 @@ $ gitgumbo 211
     open · pipeline failed · conflicts · 2 unresolved threads · changes requested by @bob
 
   !298  Draft: Cover expiry in e2e
-    draft · pipeline running · no conflicts · threads resolved · review pending
+    open · draft · pipeline running · no conflicts · threads resolved · review pending
 
 #211  Rate-limit headers missing on 404  GitHub acme/api
   Ready to ship · open · @dana
