@@ -62,7 +62,7 @@ export GITGUMBO_TOKEN=ggb_...
 | `GITGUMBO_PROJECT` | Optional. The default project(s) to search, comma-separated.   |
 | `NO_COLOR`         | Optional. Set it to turn colour off.                           |
 
-A project is named by its id, its `group/path`, or its name, case-insensitive. `gitgumbo projects` lists yours.
+A project is named by its id (exact), or by its `group/path` or its name (both case-insensitive). `gitgumbo projects` lists yours.
 
 ## Usage
 

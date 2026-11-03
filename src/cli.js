@@ -45,7 +45,9 @@ rejected, 4 rate limited, 5 network or server error.`;
  * @returns {Promise<number>} the exit code
  */
 export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0" }) {
-  let json = false;
+  // Known before parsing, so a usage error under --json is JSON too.
+  const end = argv.indexOf("--");
+  let json = (end === -1 ? argv : argv.slice(0, end)).includes("--json");
   try {
     const { values, positionals } = parseArgs({
       args: argv,

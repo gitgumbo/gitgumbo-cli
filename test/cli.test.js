@@ -520,3 +520,16 @@ test("a draft MR shows its state as well as the draft mark", async () => {
   });
   assert.match(o.out, /^ {2}open · draft · pipeline failed · conflicts/m);
 });
+
+// --- --json usage errors -------------------------------------------------------------
+
+test("--json with a bad argument still prints the JSON error", async () => {
+  for (const args of [["--json", "--bogus"], ["--bogus", "--json"], ["211", "--json", "-x"]]) {
+    const { code, out, err } = await run(args);
+    assert.equal(code, 2, args.join(" "));
+    const { error } = JSON.parse(out);
+    assert.equal(error.exitCode, 2);
+    assert.match(error.message, /Unknown option/);
+    assert.match(err, /Unknown option/);
+  }
+});
