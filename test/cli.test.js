@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { createServer } from "node:http";
 import assert from "node:assert/strict";
 import {
   run, validate, assertMatchesSpec, project, issue, mr, mrCompact, column, board, page, me, person,
@@ -422,4 +423,33 @@ test("a query or fragment in GITGUMBO_URL is exit 2; a path is kept", async () =
   }
   const { calls } = await run(["me"], { env: { GITGUMBO_URL: "https://gg.test/gitgumbo/" } });
   assert.equal(calls[0].url.href, "https://gg.test/gitgumbo/api/v1/me");
+});
+
+// --- Redirects --------------------------------------------------------------------
+
+test("requests refuse redirects", async () => {
+  const { calls } = await run(["me"], { routes: { "/me": me() } });
+  assert.equal(calls[0].init.redirect, "error");
+});
+
+test("a redirect from the server is a clear error, not followed (real fetch, loopback stub)", async (t) => {
+  let hits = 0;
+  const server = createServer((req, res) => {
+    hits++;
+    res.writeHead(302, { location: "http://127.0.0.1:9/elsewhere" }).end();
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const { main } = await import("../src/cli.js");
+  let out = "", err = "";
+  const code = await main({
+    argv: ["me"],
+    env: { GITGUMBO_TOKEN: "ggb_test", GITGUMBO_URL: `http://127.0.0.1:${server.address().port}` },
+    stdout: { write: (s) => { out += s; } },
+    stderr: { write: (s) => { err += s; } },
+  });
+  assert.equal(code, 5);
+  assert.match(err, /answered with a redirect, which the GitGumbo API never does\. Check GITGUMBO_URL\./);
+  assert.equal(hits, 1);
+  assert.equal(out, "");
 });

@@ -11,7 +11,7 @@
     "src/"
   ],
   "engines": {
-    "node": ">=18.3"
+    "node": ">=20"
   },
   "scripts": {
     "test": "node --test test/*.test.js"

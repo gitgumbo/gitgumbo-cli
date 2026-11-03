@@ -61,6 +61,7 @@ export function createClient({ baseUrl, token, fetch = globalThis.fetch, timeout
           "User-Agent": `gitgumbo-cli/${version}`,
         },
         signal: AbortSignal.timeout(timeoutMs),
+        redirect: "error", // the API never redirects; following one could leave the server
       });
     } catch (err) {
       throw networkError(server, err);
@@ -124,6 +125,9 @@ function networkError(server, err) {
   if (err?.name === "TimeoutError") return new CliError(`Could not reach ${server}: timed out`, EXIT.UNAVAILABLE);
   if (err?.message !== "fetch failed") {
     return new CliError(`Could not send the request to ${server}.`, EXIT.UNAVAILABLE);
+  }
+  if (err.cause?.message === "unexpected redirect") {
+    return new CliError(`${server} answered with a redirect, which the GitGumbo API never does. Check GITGUMBO_URL.`, EXIT.UNAVAILABLE);
   }
   const reason = err.cause?.code ?? err.cause?.message ?? "connection failed";
   return new CliError(`Could not reach ${server}: ${redact(String(reason))}`, EXIT.UNAVAILABLE);

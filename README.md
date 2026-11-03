@@ -2,7 +2,7 @@
 
 Answer the stand-up question without opening a browser: **where is issue #211, and how are its merge requests doing?**
 
-[GitGumbo](https://gitgumbo.com) is a kanban board over your GitLab and GitHub issues. This is a small, read-only command-line client for its public API. It has no dependencies and needs Node 18.3 or later.
+[GitGumbo](https://gitgumbo.com) is a kanban board over your GitLab and GitHub issues. This is a small, read-only command-line client for its public API. It has no dependencies and needs Node 20 or later.
 
 ```console
 $ gitgumbo 211
