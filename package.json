@@ -1,0 +1,37 @@
+{
+  "name": "gitgumbo-cli",
+  "version": "0.1.0",
+  "description": "Answer the stand-up question from your terminal: where is issue #211 on the GitGumbo board, and how are its merge requests doing?",
+  "type": "module",
+  "bin": {
+    "gitgumbo": "bin/gitgumbo.js"
+  },
+  "files": [
+    "bin/",
+    "src/"
+  ],
+  "engines": {
+    "node": ">=18.3"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "gitgumbo",
+    "kanban",
+    "gitlab",
+    "github",
+    "cli",
+    "standup"
+  ],
+  "author": "André Shapps",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gitgumbo/gitgumbo-cli.git"
+  },
+  "homepage": "https://github.com/gitgumbo/gitgumbo-cli#readme",
+  "bugs": {
+    "url": "https://github.com/gitgumbo/gitgumbo-cli/issues"
+  }
+}

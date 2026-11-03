@@ -1,0 +1,286 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  run, validate, assertMatchesSpec, project, issue, mr, mrCompact, column, board, page, me, person,
+} from "./support.js";
+import { parseRef } from "../src/lookup.js";
+
+const gitlab = project();
+const github = project({
+  id: "proj_gh", provider: "github", name: "api", nameWithNamespace: "acme/api",
+  pathWithNamespace: "acme/api", webUrl: "https://github.com/acme/api", remoteProjectId: "99",
+});
+const paths = (calls) => calls.map((c) => c.url.pathname.replace("/api/v1", "") + (c.url.search || ""));
+const ANSI = /\x1b\[/;
+
+// --- The fixtures themselves --------------------------------------------------
+
+test("every builder produces a body the published API schema accepts", () => {
+  assertMatchesSpec("/api/v1/projects", page([gitlab, github]));
+  assertMatchesSpec("/api/v1/projects/x/board", board([column("Doing", [issue()])]));
+  assertMatchesSpec("/api/v1/projects/x/issues", page([issue()]));
+  assertMatchesSpec("/api/v1/projects/x/merge-requests", page([mr()]));
+  assertMatchesSpec("/api/v1/me", me());
+});
+
+test("the schema check is strict: an invented or missing field fails", () => {
+  assert.throws(() => assertMatchesSpec("/api/v1/projects/x/issues", page([issue({ column: "Doing" })])), /column: not in the API schema/);
+  const { title, ...untitled } = mr();
+  assert.throws(() => assertMatchesSpec("/api/v1/projects/x/merge-requests", page([untitled])), /title: missing/);
+  assert.deepEqual(validate({ type: ["string", "null"] }, 3), ["$: expected string|null, got integer"]);
+});
+
+// --- Issue lookup -----------------------------------------------------------
+
+test("an issue on the board: column, state, assignees and full MR health", async () => {
+  const { code, out, calls } = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([column("To do"), column("In review", [issue()])]),
+      "/projects/proj_gl/merge-requests": page([mr({ number: 999 }), mr()]),
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(out, /#211 {2}Login redirect loops after session expiry {2}GitLab acme\/web/);
+  assert.match(out, /In review · open · @alice/);
+  assert.match(out, /!305 {2}Fix redirect loop on expired session/);
+  assert.match(out, /open · pipeline failed · conflicts · 2 unresolved threads · changes requested by @bob/);
+  assert.doesNotMatch(out, ANSI, "no colour when stdout is not a TTY");
+  assert.deepEqual(paths(calls), [
+    "/projects?limit=100",
+    "/projects/proj_gl/board",
+    "/projects/proj_gl/merge-requests?state=opened&linked=true&limit=100",
+  ], "the board answers it: no issue scan");
+});
+
+test("sends the token as a Bearer header", async () => {
+  const { calls } = await run(["me"], { routes: { "/me": me() } });
+  assert.equal(calls[0].init.headers.Authorization, "Bearer ggb_test");
+  assert.equal(calls[0].url.origin, "https://gg.test");
+});
+
+test("a closed issue falls back to the issue list and skips MR details", async () => {
+  const closed = issue({
+    state: "closed", assignees: [],
+    linkedMergeRequests: [mrCompact({ state: "merged", pipelineStatus: "success", reviewState: "approved" })],
+  });
+  const { code, out, calls } = await run(["#211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([column("Doing", [issue({ number: 7 })])]),
+      "/projects/proj_gl/issues": page([issue({ number: 300 }), closed]),
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(out, /off the board · closed · unassigned/);
+  assert.match(out, /!305 .*\n {4}merged$/m);
+  assert.ok(!paths(calls).some((p) => p.includes("merge-requests")), "merged MRs need no detail call");
+  assert.ok(paths(calls).includes("/projects/proj_gl/issues?state=all&limit=100"));
+});
+
+test("pages through the issue list with the cursor", async () => {
+  const { code, out, calls } = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([]),
+      "/projects/proj_gl/issues": (url) => url.searchParams.get("cursor") === "c1"
+        ? page([issue({ linkedMergeRequests: [] })])
+        : page([issue({ number: 1 })], "c1"),
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(out, /not on the "Development" board · open/);
+  assert.match(out, /no linked MRs/);
+  assert.equal(calls.filter((c) => c.url.pathname.endsWith("/issues")).length, 2);
+});
+
+test("a hidden board (board: null, no columns) still finds the issue", async () => {
+  const { code, out } = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([], { board: null }),
+      "/projects/proj_gl/issues": page([issue({ linkedMergeRequests: [] })]),
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(out, /not on the board · open/);
+});
+
+test("a number in both a GitLab and a GitHub project shows both, labelled", async () => {
+  const ghIssue = issue({
+    title: "Rate limit headers missing", webUrl: "https://github.com/acme/api/issues/211",
+    issueType: null, confidential: null,
+    linkedMergeRequests: [mrCompact({ number: 212, title: "Add headers", pipelineStatus: "success", reviewState: "approved", pipelineStartedAt: null })],
+  });
+  const { code, out } = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab, github]),
+      "/projects/proj_gl/board": board([column("In review", [issue({ linkedMergeRequests: [] })])]),
+      "/projects/proj_gh/board": board([column("Ready", [ghIssue])], { board: null }),
+      "/projects/proj_gh/merge-requests": page([mr({
+        number: 212, title: "Add headers", pipelineStatus: "success", reviewState: "approved",
+        pipelineStartedAt: null, hasConflicts: false, unresolvedThreads: 0,
+        approvedBy: [person("dana")], changesRequestedBy: [],
+      })]),
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(out, /#211 {2}Login redirect loops.*GitLab acme\/web/);
+  assert.match(out, /#211 {2}Rate limit headers missing {2}GitHub acme\/api/);
+  assert.match(out, /PR #212 {2}Add headers/);
+  assert.match(out, /pipeline success · no conflicts · threads resolved · approved by @dana/);
+});
+
+// --- Merge request lookup ---------------------------------------------------
+
+for (const args of [["!305"], ["mr", "305"]]) {
+  test(`${args.join(" ")} finds the merge request`, async () => {
+    const { code, out, calls } = await run(args, {
+      routes: {
+        "/projects": page([gitlab, github]),
+        "/projects/proj_gl/merge-requests": page([mr({ number: 1 }), mr()]),
+        "/projects/proj_gh/merge-requests": page([]),
+      },
+    });
+    assert.equal(code, 0);
+    assert.match(out, /^!305 {2}Fix redirect loop on expired session {2}GitLab acme\/web$/m);
+    assert.match(out, /fix\/redirect-loop → main/);
+    assert.match(out, /reviewers @bob/);
+    assert.ok(paths(calls).includes("/projects/proj_gl/merge-requests?state=all&limit=100"));
+    assert.ok(!paths(calls).some((p) => p.includes("/board")));
+  });
+}
+
+// --- Project selection --------------------------------------------------------
+
+test("--project narrows the search; GITGUMBO_PROJECT is the default", async () => {
+  const routes = {
+    "/projects": page([gitlab, github]),
+    "/projects/proj_gh/board": board([column("Ready", [issue({ linkedMergeRequests: [] })])]),
+  };
+  for (const opts of [{ args: ["211", "-p", "acme/api"] }, { args: ["211"], env: { GITGUMBO_PROJECT: "API" } }]) {
+    const { code, calls } = await run(opts.args, { routes, env: opts.env });
+    assert.equal(code, 0);
+    assert.ok(!paths(calls).some((p) => p.includes("proj_gl")), "the GitLab project is not searched");
+  }
+});
+
+test("an unknown --project is a usage error that lists the real ones", async () => {
+  const { code, err } = await run(["211", "-p", "nope"], { routes: { "/projects": page([gitlab, github]) } });
+  assert.equal(code, 2);
+  assert.match(err, /No project matches "nope". Your projects: acme\/web, acme\/api/);
+});
+
+test("not found: exit 1, says what was searched and that the scan was capped", async () => {
+  const { code, out, err } = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([]),
+      "/projects/proj_gl/issues": (url) => page([issue({ number: 1 })], `c${url.searchParams.get("cursor") ?? 0}x`),
+    },
+  });
+  assert.equal(code, 1);
+  assert.equal(out, "");
+  assert.match(err, /Issue #211 not found in acme\/web\. Only the 500 most recently updated issues were searched in acme\/web\. .*try '!211'/);
+});
+
+// --- Errors -------------------------------------------------------------------
+
+test("a missing token is exit 2 and makes no request", async () => {
+  const { code, err, calls } = await run(["211"], { env: { GITGUMBO_TOKEN: "" } });
+  assert.equal(code, 2);
+  assert.match(err, /GITGUMBO_TOKEN is not set\. Create a token at https:\/\/gg\.test\/settings\/api/);
+  assert.equal(calls.length, 0);
+});
+
+const apiError = (status, code, message, headers) => ({ status, body: { error: { code, message } }, headers });
+
+test("401 and 402 are exit 3 with the API's code", async () => {
+  let r = await run(["211"], { routes: { "/projects": apiError(401, "token_revoked", "This token has been revoked") } });
+  assert.equal(r.code, 3);
+  assert.match(r.err, /Token rejected \(token_revoked\): This token has been revoked\./);
+  r = await run(["211"], { routes: { "/projects": apiError(402, "api_requires_pro", "API access requires a Pro plan") } });
+  assert.equal(r.code, 3);
+  assert.match(r.err, /requires a Pro plan \(api_requires_pro\)/);
+});
+
+test("429 is exit 4 and shows the Retry-After", async () => {
+  const { code, err } = await run(["211"], {
+    routes: { "/projects": apiError(429, "rate_limited", "API rate limit exceeded", { "Retry-After": "754" }) },
+  });
+  assert.equal(code, 4);
+  assert.match(err, /Rate limit exceeded \(rate_limited\)\. Try again in 12m 34s\./);
+});
+
+test("503 (rate limiter down) is exit 4 too", async () => {
+  const { code, err } = await run(["me"], { routes: { "/me": apiError(503, "unavailable", "x", { "Retry-After": "60" }) } });
+  assert.equal(code, 4);
+  assert.match(err, /temporarily unavailable \(unavailable\)\. Try again in 1m 0s/);
+});
+
+test("a 404 mid-lookup is exit 1", async () => {
+  const { code, err } = await run(["211"], {
+    routes: { "/projects": page([gitlab]), "/projects/proj_gl/board": apiError(404, "not_found", "Project not found") },
+  });
+  assert.equal(code, 1);
+  assert.match(err, /Not found \(not_found\): Project not found/);
+});
+
+test("a network failure is exit 5", async () => {
+  const down = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
+  const { code, err } = await run(["211"], { routes: { "/projects": down } });
+  assert.equal(code, 5);
+  assert.match(err, /Could not reach https:\/\/gg\.test: ECONNREFUSED/);
+});
+
+test("bad arguments are exit 2", async () => {
+  for (const args of [[], ["abc"], ["211", "212"], ["--bogus"]]) {
+    assert.equal((await run(args)).code, 2, args.join(" "));
+  }
+});
+
+// --- Output modes -------------------------------------------------------------
+
+const onBoard = {
+  "/projects": page([gitlab]),
+  "/projects/proj_gl/board": board([column("Doing", [issue()])]),
+  "/projects/proj_gl/merge-requests": page([mr()]),
+};
+
+test("colour on a TTY, and off with NO_COLOR or --no-color", async () => {
+  assert.match((await run(["211"], { routes: onBoard, tty: true })).out, ANSI);
+  assert.doesNotMatch((await run(["211"], { routes: onBoard, tty: true, env: { NO_COLOR: "1" } })).out, ANSI);
+  assert.doesNotMatch((await run(["211", "--no-color"], { routes: onBoard, tty: true })).out, ANSI);
+});
+
+test("--json prints the API objects, with the column", async () => {
+  const { code, out } = await run(["211", "--json"], { routes: onBoard, tty: true });
+  assert.equal(code, 0);
+  const result = JSON.parse(out);
+  assert.equal(result.matches[0].column, "Doing");
+  assert.equal(result.matches[0].issue.number, 211);
+  assert.equal(result.matches[0].mergeRequests[0].unresolvedThreads, 2);
+  assert.deepEqual(result.ref, { kind: "issue", number: 211 });
+});
+
+test("--json errors are JSON on stdout as well", async () => {
+  const { code, out } = await run(["211", "--json"], {
+    routes: { "/projects": apiError(429, "rate_limited", "x", { "Retry-After": "5" }) },
+  });
+  assert.equal(code, 4);
+  assert.deepEqual(JSON.parse(out).error, { message: "Rate limit exceeded (rate_limited). Try again in 5s.", exitCode: 4, status: 429, code: "rate_limited", retryAfter: 5 });
+});
+
+test("projects and me", async () => {
+  let r = await run(["projects"], { routes: { "/projects": page([gitlab, github]) } });
+  assert.match(r.out, /^acme\/web {2}GitLab · id proj_gl\nacme\/api {2}GitHub · id proj_gh\n$/);
+  r = await run(["me"], { routes: { "/me": me() } });
+  assert.match(r.out, /^Acme {2}pro plan\ntoken "laptop" \(read\), expires 2027-01-31\nrate limit 994\/1000 left/);
+});
+
+test("parseRef", () => {
+  assert.deepEqual(parseRef("211"), { kind: "issue", number: 211 });
+  assert.deepEqual(parseRef("#211"), { kind: "issue", number: 211 });
+  assert.deepEqual(parseRef("!305"), { kind: "mr", number: 305 });
+  for (const bad of ["", "#", "0", "2.5", "#!3", "abc"]) assert.throws(() => parseRef(bad), /Not an issue or MR reference/);
+});

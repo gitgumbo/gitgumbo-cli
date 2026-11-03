@@ -1,0 +1,1189 @@
+{
+  "source": "GitGumbo OpenAPI 1.18.1 (lib/api/openapi.generated.json; served at /api/v1/openapi.json)",
+  "responses": {
+    "/me": {
+      "type": "object",
+      "properties": {
+        "firm": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "plan": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "plan"
+          ]
+        },
+        "token": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "expiresAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "scopes",
+            "expiresAt"
+          ]
+        },
+        "rateLimit": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer"
+            },
+            "remaining": {
+              "type": "integer"
+            },
+            "reset": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "limit",
+            "remaining",
+            "reset"
+          ]
+        }
+      },
+      "required": [
+        "firm",
+        "token",
+        "rateLimit"
+      ]
+    },
+    "/projects": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "remoteProjectId": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "nameWithNamespace": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pathWithNamespace": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "webUrl": {
+                "type": "string"
+              },
+              "boardMode": {
+                "type": "string"
+              },
+              "syncEnabled": {
+                "type": "boolean"
+              },
+              "lastSyncAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "remoteProjectId",
+              "provider",
+              "name",
+              "nameWithNamespace",
+              "pathWithNamespace",
+              "webUrl",
+              "boardMode",
+              "syncEnabled",
+              "lastSyncAt"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "data",
+        "nextCursor"
+      ]
+    },
+    "/projects/{id}/issues": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "webUrl": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "assignees": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "username": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "name",
+                    "avatarUrl"
+                  ]
+                }
+              },
+              "authorName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "authorUsername": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "remoteCreatedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "remoteUpdatedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "dueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "milestoneTitle": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "milestoneDueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "statusName": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "GitLab work-item Status, or the bound GitHub Project's Status. Null when the issue has none, or the board follows neither."
+              },
+              "statusCategory": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "blocked": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "blockedByCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "confidential": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "issueType": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "blockedBy": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "iid": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "webUrl": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "iid",
+                    "title",
+                    "webUrl",
+                    "reference",
+                    "state"
+                  ]
+                }
+              },
+              "blockingCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "blocking": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "iid": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "webUrl": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "iid",
+                    "title",
+                    "webUrl",
+                    "reference",
+                    "state"
+                  ]
+                }
+              },
+              "relatesTo": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "iid": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "webUrl": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "iid",
+                    "title",
+                    "webUrl",
+                    "reference",
+                    "state"
+                  ]
+                }
+              },
+              "relatesToHasMore": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "linkedMergeRequests": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "number": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "draft": {
+                      "type": "boolean"
+                    },
+                    "webUrl": {
+                      "type": "string"
+                    },
+                    "pipelineStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewState": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pipelineStartedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "When the MR's current pipeline started (ISO 8601). Null when unknown, and always null for GitHub."
+                    },
+                    "pipelineLongRunning": {
+                      "type": "boolean",
+                      "description": "True when the pipeline is still unfinished 3 hours after it started — the board's long-running flag, evaluated at request time."
+                    }
+                  },
+                  "required": [
+                    "number",
+                    "title",
+                    "state",
+                    "draft",
+                    "webUrl",
+                    "pipelineStatus",
+                    "reviewState",
+                    "pipelineStartedAt",
+                    "pipelineLongRunning"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "number",
+              "title",
+              "state",
+              "webUrl",
+              "labels",
+              "assignees",
+              "authorName",
+              "authorUsername",
+              "remoteCreatedAt",
+              "remoteUpdatedAt",
+              "dueDate",
+              "milestoneTitle",
+              "milestoneDueDate",
+              "statusName",
+              "statusCategory",
+              "blocked",
+              "blockedByCount",
+              "confidential",
+              "issueType",
+              "blockedBy",
+              "blockingCount",
+              "blocking",
+              "relatesTo",
+              "relatesToHasMore",
+              "linkedMergeRequests"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "data",
+        "nextCursor"
+      ]
+    },
+    "/projects/{id}/merge-requests": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "draft": {
+                "type": "boolean"
+              },
+              "webUrl": {
+                "type": "string"
+              },
+              "pipelineStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reviewState": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pipelineStartedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "When the MR's current pipeline started (ISO 8601). Null when unknown, and always null for GitHub."
+              },
+              "pipelineLongRunning": {
+                "type": "boolean",
+                "description": "True when the pipeline is still unfinished 3 hours after it started — the board's long-running flag, evaluated at request time."
+              },
+              "sourceBranch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "targetBranch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "authorName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "authorUsername": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "authorAvatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hasConflicts": {
+                "type": "boolean"
+              },
+              "mergeStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "username": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "name",
+                    "avatarUrl"
+                  ]
+                }
+              },
+              "approvedBy": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "username": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "name",
+                    "avatarUrl"
+                  ]
+                }
+              },
+              "changesRequestedBy": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "username": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "name",
+                    "avatarUrl"
+                  ]
+                }
+              },
+              "unresolvedThreads": {
+                "type": "integer"
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "remoteCreatedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "remoteUpdatedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastCommitAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "number",
+              "title",
+              "state",
+              "draft",
+              "webUrl",
+              "pipelineStatus",
+              "reviewState",
+              "pipelineStartedAt",
+              "pipelineLongRunning",
+              "sourceBranch",
+              "targetBranch",
+              "authorName",
+              "authorUsername",
+              "authorAvatarUrl",
+              "hasConflicts",
+              "mergeStatus",
+              "reviewers",
+              "approvedBy",
+              "changesRequestedBy",
+              "unresolvedThreads",
+              "labels",
+              "remoteCreatedAt",
+              "remoteUpdatedAt",
+              "lastCommitAt"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "data",
+        "nextCursor"
+      ]
+    },
+    "/projects/{id}/board": {
+      "type": "object",
+      "properties": {
+        "board": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "remoteBoardId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "assigneeUsername": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "remoteBoardId",
+            "name",
+            "assigneeUsername"
+          ]
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "label",
+                  "assignee",
+                  "milestone",
+                  "status"
+                ]
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "match": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "color": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "wipLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "issues": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "number": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "webUrl": {
+                      "type": "string"
+                    },
+                    "labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "assignees": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "avatarUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "username",
+                          "name",
+                          "avatarUrl"
+                        ]
+                      }
+                    },
+                    "authorName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "authorUsername": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "remoteCreatedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "remoteUpdatedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "milestoneTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "milestoneDueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "statusName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "GitLab work-item Status, or the bound GitHub Project's Status. Null when the issue has none, or the board follows neither."
+                    },
+                    "statusCategory": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "blocked": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "blockedByCount": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "confidential": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "issueType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "blockedBy": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iid": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "webUrl": {
+                            "type": "string"
+                          },
+                          "reference": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iid",
+                          "title",
+                          "webUrl",
+                          "reference",
+                          "state"
+                        ]
+                      }
+                    },
+                    "blockingCount": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "blocking": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iid": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "webUrl": {
+                            "type": "string"
+                          },
+                          "reference": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iid",
+                          "title",
+                          "webUrl",
+                          "reference",
+                          "state"
+                        ]
+                      }
+                    },
+                    "relatesTo": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iid": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "webUrl": {
+                            "type": "string"
+                          },
+                          "reference": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iid",
+                          "title",
+                          "webUrl",
+                          "reference",
+                          "state"
+                        ]
+                      }
+                    },
+                    "relatesToHasMore": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "linkedMergeRequests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "draft": {
+                            "type": "boolean"
+                          },
+                          "webUrl": {
+                            "type": "string"
+                          },
+                          "pipelineStatus": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewState": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "pipelineStartedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "When the MR's current pipeline started (ISO 8601). Null when unknown, and always null for GitHub."
+                          },
+                          "pipelineLongRunning": {
+                            "type": "boolean",
+                            "description": "True when the pipeline is still unfinished 3 hours after it started — the board's long-running flag, evaluated at request time."
+                          }
+                        },
+                        "required": [
+                          "number",
+                          "title",
+                          "state",
+                          "draft",
+                          "webUrl",
+                          "pipelineStatus",
+                          "reviewState",
+                          "pipelineStartedAt",
+                          "pipelineLongRunning"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "number",
+                    "title",
+                    "state",
+                    "webUrl",
+                    "labels",
+                    "assignees",
+                    "authorName",
+                    "authorUsername",
+                    "remoteCreatedAt",
+                    "remoteUpdatedAt",
+                    "dueDate",
+                    "milestoneTitle",
+                    "milestoneDueDate",
+                    "statusName",
+                    "statusCategory",
+                    "blocked",
+                    "blockedByCount",
+                    "confidential",
+                    "issueType",
+                    "blockedBy",
+                    "blockingCount",
+                    "blocking",
+                    "relatesTo",
+                    "relatesToHasMore",
+                    "linkedMergeRequests"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "name",
+              "type",
+              "labels",
+              "match",
+              "color",
+              "wipLimit",
+              "issues"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "board",
+        "columns",
+        "truncated"
+      ]
+    }
+  },
+  "error": {
+    "type": "object",
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    "required": [
+      "error"
+    ]
+  }
+}
