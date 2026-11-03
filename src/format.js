@@ -3,6 +3,38 @@
 import { formatDuration } from "./api.js";
 import { MAX_PAGES, projectLabel } from "./lookup.js";
 
+// C0/C1 controls (except tab and newline), DEL, and the bidi controls. Text from
+// the API (titles, branch and project names, error messages) can carry them, and
+// a terminal would act on them. Replaced at render time, whatever the colour mode.
+const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f-\x9f\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g;
+
+/** Replace terminal control and bidi characters with U+FFFD. */
+export function clean(s) {
+  return String(s).replace(UNSAFE, "\uFFFD");
+}
+
+/** `clean` every string in an API value, leaving its shape alone. */
+function scrub(value) {
+  if (typeof value === "string") return clean(value);
+  if (Array.isArray(value)) return value.map(scrub);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrub(v)]));
+  }
+  return value;
+}
+
+// The same characters, minus the C0 range JSON.stringify already escapes.
+const JSON_UNSAFE = /[\x7f-\x9f\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * JSON.stringify, with the remaining control and bidi characters written as
+ * \uXXXX escapes. The JSON value is unchanged; only its text is safe to print.
+ */
+export function toJson(value) {
+  return JSON.stringify(value, null, 2)
+    .replace(JSON_UNSAFE, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
 const CODES = { red: 31, green: 32, yellow: 33, cyan: 36, bold: 1, dim: 2 };
 
 /** @param {boolean} enabled */
@@ -54,6 +86,7 @@ function review(mr, paint) {
 
 /** The one-line health summary of a merge request. */
 export function mrStatus(mr, paint) {
+  mr = scrub(mr);
   const parts = [mr.draft ? paint.dim("draft") : STATE[mr.state] ?? mr.state];
   if (mr.state !== "opened") return parts.join(" · ");
 
@@ -82,7 +115,7 @@ function mrLines(provider, mr, paint, indent) {
 
 /** @param {any} match  from findIssue */
 export function renderIssue(match, paint) {
-  const { project, issue, column, board, mergeRequests } = match;
+  const { project, issue, column, board, mergeRequests } = scrub(match);
   const where =
     column ? paint.bold(column)
     : issue.state === "opened" ? paint.dim(board ? `not on the "${board}" board` : "not on the board")
@@ -105,7 +138,7 @@ export function renderIssue(match, paint) {
 
 /** @param {any} match  from findMergeRequest */
 export function renderMergeRequest(match, paint) {
-  const { project, mergeRequest: mr } = match;
+  const { project, mergeRequest: mr } = scrub(match);
   const lines = [
     header(project, mrRef(project.provider, mr.number), mr.title, paint),
     `  ${mrStatus(mr, paint)}`,
@@ -124,7 +157,7 @@ export function renderLookup(result, paint) {
 
 /** Why nothing came back, with what was searched and what was not. */
 export function renderNotFound(result) {
-  const { ref, searched, incomplete } = result;
+  const { ref, searched, incomplete } = scrub(result);
   const what = ref.kind === "mr" ? `MR !${ref.number}` : `Issue #${ref.number}`;
   let msg = `${what} not found in ${searched.join(", ")}.`;
   if (incomplete.length) {
@@ -136,6 +169,7 @@ export function renderNotFound(result) {
 }
 
 export function renderProjects(projects, paint) {
+  projects = scrub(projects);
   if (projects.length === 0) return "No projects yet.";
   return projects
     .map((p) => `${projectLabel(p)}  ${paint.dim(`${providerName(p.provider)} · id ${p.id}`)}`)
@@ -143,7 +177,7 @@ export function renderProjects(projects, paint) {
 }
 
 export function renderMe(me, paint) {
-  const { firm, token, rateLimit } = me;
+  const { firm, token, rateLimit } = scrub(me);
   const resetIn = Math.max(0, rateLimit.reset - Math.floor(Date.now() / 1000));
   return [
     `${paint.bold(firm.name)}  ${paint.dim(`${firm.plan} plan`)}`,

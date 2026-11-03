@@ -284,3 +284,67 @@ test("parseRef", () => {
   assert.deepEqual(parseRef("!305"), { kind: "mr", number: 305 });
   for (const bad of ["", "#", "0", "2.5", "#!3", "abc"]) assert.throws(() => parseRef(bad), /Not an issue or MR reference/);
 });
+
+// --- Control characters in API text ------------------------------------------
+
+// ESC, CR, a C1 CSI and RIGHT-TO-LEFT OVERRIDE: none may reach the terminal raw.
+const NASTY = "\x1b[2J\r\u009b31m‮";
+const RAW_CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f‎‏؜‪-‮⁦-⁩]/;
+const withoutColour = (s) => s.replace(/\x1b\[\d+m/g, "");
+
+const nastyRoutes = {
+  "/projects": page([project({ name: `web${NASTY}`, pathWithNamespace: `acme/web${NASTY}` })]),
+  "/projects/proj_gl/merge-requests": page([mr({
+    title: `Fix${NASTY}it`, sourceBranch: `fix/${NASTY}`, targetBranch: `main${NASTY}`,
+    reviewers: [person(`bob${NASTY}`)],
+  })]),
+};
+
+test("control characters in API text are replaced before printing, coloured or not", async () => {
+  for (const opts of [{}, { tty: true }, { tty: true, args: ["--no-color"] }]) {
+    const { code, out } = await run(["!305", ...(opts.args ?? [])], { routes: nastyRoutes, tty: opts.tty });
+    assert.equal(code, 0);
+    assert.doesNotMatch(withoutColour(out), RAW_CONTROL, JSON.stringify(opts));
+    assert.match(out, /Fix�\[2J��31m�it/);
+    assert.match(out, /fix\/�/);
+    assert.match(out, /reviewers @bob�/);
+    assert.match(out, /acme\/web�/);
+  }
+  const r = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([column(`Doing${NASTY}`, [issue({
+        title: `Login${NASTY}`, linkedMergeRequests: [], assignees: [person(null, `Al${NASTY}`)],
+      })])]),
+    },
+  });
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, RAW_CONTROL);
+  assert.match(r.out, /#211 {2}Login�/);
+  assert.match(r.out, /Doing�.* · open · Al�/);
+});
+
+test("control characters in an API error message are replaced on stderr", async () => {
+  const { code, err } = await run(["211"], {
+    routes: { "/projects": page([gitlab]), "/projects/proj_gl/board": apiError(404, `nf${NASTY}`, `Gone${NASTY}`) },
+  });
+  assert.equal(code, 1);
+  assert.doesNotMatch(err, RAW_CONTROL);
+  assert.match(err, /Not found \(nf�.*\): Gone�/);
+});
+
+test("--json keeps API text unchanged as a value but prints no raw control characters", async () => {
+  const { code, out } = await run(["!305", "--json"], { routes: nastyRoutes });
+  assert.equal(code, 0);
+  assert.doesNotMatch(out, RAW_CONTROL);
+  const { mergeRequest } = JSON.parse(out).matches[0];
+  assert.equal(mergeRequest.title, `Fix${NASTY}it`);
+  assert.equal(mergeRequest.sourceBranch, `fix/${NASTY}`);
+
+  const e = await run(["211", "--json"], {
+    routes: { "/projects": page([gitlab]), "/projects/proj_gl/board": apiError(404, "not_found", `Gone${NASTY}`) },
+  });
+  assert.doesNotMatch(e.out, RAW_CONTROL);
+  assert.equal(JSON.parse(e.out).error.message, `Not found (not_found): Gone${NASTY}`);
+  assert.doesNotMatch(e.err, RAW_CONTROL);
+});

@@ -4,7 +4,7 @@
 import { parseArgs } from "node:util";
 import { createClient, CliError, EXIT } from "./api.js";
 import { lookup, parseRef } from "./lookup.js";
-import { painter, renderLookup, renderMe, renderNotFound, renderProjects } from "./format.js";
+import { clean, painter, renderLookup, renderMe, renderNotFound, renderProjects, toJson } from "./format.js";
 
 export const DEFAULT_URL = "https://gitgumbo.com";
 
@@ -70,17 +70,17 @@ export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0"
 
     if (command.name === "projects") {
       const projects = await client.all("/projects");
-      return print(stdout, json ? JSON.stringify(projects, null, 2) : renderProjects(projects, paint));
+      return print(stdout, json ? toJson(projects) : renderProjects(projects, paint));
     }
     if (command.name === "me") {
       const me = await client.get("/me");
-      return print(stdout, json ? JSON.stringify(me, null, 2) : renderMe(me, paint));
+      return print(stdout, json ? toJson(me) : renderMe(me, paint));
     }
 
     const selectors = values.project ?? splitList(env.GITGUMBO_PROJECT);
     const result = await lookup(client, command.ref, selectors);
     if (json) {
-      print(stdout, JSON.stringify(result, null, 2));
+      print(stdout, toJson(result));
     } else if (result.matches.length) {
       print(stdout, renderLookup(result, paint));
     } else {
@@ -92,9 +92,9 @@ export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0"
     const code = known ? err.exitCode : err?.code?.startsWith?.("ERR_PARSE_ARGS") ? EXIT.USAGE : EXIT.UNAVAILABLE;
     const message = known || code === EXIT.USAGE ? err.message : `Unexpected error: ${err?.stack ?? err}`;
     if (json) {
-      print(stdout, JSON.stringify({ error: { message, exitCode: code, status: err.status, code: err.code, retryAfter: err.retryAfter } }, null, 2));
+      print(stdout, toJson({ error: { message, exitCode: code, status: err.status, code: err.code, retryAfter: err.retryAfter } }));
     }
-    stderr.write(`gitgumbo: ${message}\n`);
+    stderr.write(`gitgumbo: ${clean(message)}\n`);
     return code;
   }
 }
