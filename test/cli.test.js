@@ -453,3 +453,47 @@ test("a redirect from the server is a clear error, not followed (real fetch, loo
   assert.equal(hits, 1);
   assert.equal(out, "");
 });
+
+// --- One project failing ------------------------------------------------------------
+
+test("a project that fails stops new requests but keeps a match found elsewhere", async () => {
+  const names = ["one", "two", "three", "four", "five", "six"];
+  const projects = names.map((n) => project({ id: `p_${n}`, name: n, nameWithNamespace: `Acme / ${n}`, pathWithNamespace: `acme/${n}` }));
+  const routes = { "/projects": page(projects) };
+  for (const n of names) {
+    routes[`/projects/p_${n}/board`] = board([]);
+    routes[`/projects/p_${n}/issues`] = page([]);
+  }
+  // one: found by the issue scan (2 requests); two: fails on its first request.
+  routes["/projects/p_one/issues"] = page([issue({ linkedMergeRequests: [] })]);
+  routes["/projects/p_two/board"] = apiError(500, "internal", "boom");
+
+  const { code, out, err, calls } = await run(["211"], { routes });
+  assert.equal(code, 0, err);
+  assert.match(out, /#211 {2}Login redirect loops after session expiry {2}GitLab acme\/one/);
+  assert.match(err, /warning: could not search acme\/two: GitGumbo API error 500 \(internal\): boom/);
+  assert.match(err, /not searched after that error: acme\/five, acme\/six/);
+  const started = paths(calls).filter((p) => p.endsWith("/board")).map((p) => p.split("/")[2]);
+  assert.deepEqual(started, ["p_one", "p_two", "p_three", "p_four"], "no project is started after the error");
+
+  const j = await run(["211", "--json"], { routes });
+  assert.equal(j.code, 0);
+  const result = JSON.parse(j.out);
+  assert.deepEqual(Object.keys(result), ["ref", "matches", "searched", "incomplete"]);
+  assert.deepEqual(result.searched, ["acme/one", "acme/three", "acme/four"]);
+});
+
+test("a project that fails with no match anywhere is reported as the error", async () => {
+  const two = project({ id: "p_two", name: "two", nameWithNamespace: "Acme / two", pathWithNamespace: "acme/two" });
+  const { code, err } = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab, two]),
+      "/projects/proj_gl/board": board([]),
+      "/projects/proj_gl/issues": page([]),
+      "/projects/p_two/board": apiError(500, "internal", "boom"),
+    },
+  });
+  assert.equal(code, 5);
+  assert.match(err, /GitGumbo API error 500 \(internal\): boom/);
+  assert.doesNotMatch(err, /warning/);
+});

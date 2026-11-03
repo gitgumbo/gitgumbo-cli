@@ -127,6 +127,10 @@ export async function findMergeRequest(client, project, number) {
 /**
  * Look a reference up in every selected project, four projects at a time.
  *
+ * If a project's search fails, no further project is started. A match found
+ * elsewhere still comes back, with the failure in `failures` for a warning;
+ * with no match, the first error is thrown.
+ *
  * @param {ReturnType<import("./api.js").createClient>} client
  * @param {{ kind: "issue" | "mr", number: number }} ref
  * @param {string[]} selectors
@@ -137,25 +141,42 @@ export async function lookup(client, ref, selectors) {
     throw new CliError("This firm has no projects yet.", EXIT.NOT_FOUND);
   }
   const find = ref.kind === "mr" ? findMergeRequest : findIssue;
-  const results = await mapLimit(projects, 4, (p) => find(client, p, ref.number));
+  const { results, errors } = await mapLimit(projects, 4, (p) => find(client, p, ref.number));
+  const matches = results.filter(Boolean).map((r) => r.match).filter(Boolean);
+  if (errors.length && matches.length === 0) throw errors[0].error;
+
+  const done = projects.filter((_, i) => results[i]);
   return {
     ref,
-    matches: results.map((r) => r.match).filter(Boolean),
-    searched: projects.map(projectLabel),
-    incomplete: projects.filter((_, i) => !results[i].complete).map(projectLabel),
+    matches,
+    searched: done.map(projectLabel),
+    incomplete: done.filter((p) => !results[projects.indexOf(p)].complete).map(projectLabel),
+    failures: {
+      failed: errors.map(({ index, error }) => ({ project: projectLabel(projects[index]), message: error?.message ?? String(error) })),
+      skipped: projects.filter((_, i) => !results[i] && !errors.some((e) => e.index === i)).map(projectLabel),
+    },
   };
 }
 
-/** Promise.all with at most `limit` calls in flight, results in input order. */
+/**
+ * Promise.all with at most `limit` calls in flight, results in input order.
+ * After the first rejection no new call starts; calls in flight finish.
+ */
 async function mapLimit(items, limit, fn) {
   const results = new Array(items.length);
+  /** @type {{ index: number, error: any }[]} */
+  const errors = [];
   let next = 0;
   const worker = async () => {
-    while (next < items.length) {
+    while (next < items.length && errors.length === 0) {
       const i = next++;
-      results[i] = await fn(items[i]);
+      try {
+        results[i] = await fn(items[i]);
+      } catch (error) {
+        errors.push({ index: i, error });
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
+  return { results, errors };
 }

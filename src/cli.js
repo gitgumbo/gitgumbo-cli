@@ -78,7 +78,13 @@ export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0"
     }
 
     const selectors = values.project ?? splitList(env.GITGUMBO_PROJECT);
-    const result = await lookup(client, command.ref, selectors);
+    const { failures, ...result } = await lookup(client, command.ref, selectors);
+    for (const { project, message } of failures.failed) {
+      stderr.write(`gitgumbo: warning: could not search ${clean(project)}: ${clean(message)}\n`);
+    }
+    if (failures.skipped.length) {
+      stderr.write(`gitgumbo: warning: not searched after that error: ${clean(failures.skipped.join(", "))}\n`);
+    }
     if (json) {
       print(stdout, toJson(result));
     } else if (result.matches.length) {
