@@ -524,13 +524,22 @@ test("a draft MR shows its state as well as the draft mark", async () => {
 // --- --json usage errors -------------------------------------------------------------
 
 test("--json with a bad argument still prints the JSON error", async () => {
-  for (const args of [["--json", "--bogus"], ["--bogus", "--json"], ["211", "--json", "-x"]]) {
+  const cases = [
+    [["--json", "--bogus"], /Unknown option/],
+    [["--bogus", "--json"], /Unknown option/],
+    [["211", "--json", "-x"], /Unknown option/],
+    [["211", "--json=1"], /--json.* does not take an argument/],
+    [["--json=", "211"], /--json.* does not take an argument/],
+  ];
+  for (const [args, message] of cases) {
     const { code, out, err } = await run(args);
     assert.equal(code, 2, args.join(" "));
     const { error } = JSON.parse(out);
     assert.equal(error.exitCode, 2);
-    assert.match(error.message, /Unknown option/);
-    assert.match(err, /Unknown option/);
+    assert.match(error.message, message);
+    assert.equal(error.code, undefined, "no Node-internal code in error.code");
+    assert.ok(!out.includes("ERR_PARSE_ARGS"), args.join(" "));
+    assert.match(err, message);
   }
 });
 

@@ -47,7 +47,7 @@ rejected, 4 rate limited, 5 network or server error.`;
 export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0" }) {
   // Known before parsing, so a usage error under --json is JSON too.
   const end = argv.indexOf("--");
-  let json = (end === -1 ? argv : argv.slice(0, end)).includes("--json");
+  let json = (end === -1 ? argv : argv.slice(0, end)).some((a) => a === "--json" || a.startsWith("--json="));
   try {
     const { values, positionals } = parseArgs({
       args: argv,
@@ -97,10 +97,13 @@ export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0"
     return result.matches.length ? EXIT.OK : EXIT.NOT_FOUND;
   } catch (err) {
     const known = err instanceof CliError;
-    const code = known ? err.exitCode : err?.code?.startsWith?.("ERR_PARSE_ARGS") ? EXIT.USAGE : EXIT.UNAVAILABLE;
-    const message = known || code === EXIT.USAGE ? err.message : `Unexpected error: ${err?.stack ?? err}`;
+    const parseError = !known && Boolean(err?.code?.startsWith?.("ERR_PARSE_ARGS"));
+    const code = known ? err.exitCode : parseError ? EXIT.USAGE : EXIT.UNAVAILABLE;
+    const message = known || parseError ? err.message : `Unexpected error: ${err?.stack ?? err}`;
     if (json) {
-      print(stdout, toJson({ error: { message, exitCode: code, status: err.status, code: err.code, retryAfter: err.retryAfter } }));
+      // error.code is the API's error code; Node's own parse-error code is not one.
+      const apiCode = parseError ? undefined : err.code;
+      print(stdout, toJson({ error: { message, exitCode: code, status: err.status, code: apiCode, retryAfter: err.retryAfter } }));
     }
     stderr.write(`gitgumbo: ${clean(message)}\n`);
     return code;
