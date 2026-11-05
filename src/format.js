@@ -36,8 +36,9 @@ function scrub(value) {
   return value;
 }
 
-// The same characters, minus the C0 range JSON.stringify already escapes.
-const JSON_UNSAFE = /[\x7f-\x9f\u00ad\u200b\u200e\u200f\u061c\u202a-\u202e\u2060-\u2064\u2066-\u2069\u115f\u1160\u3164\ufeff\uffa0]/g;
+// The same characters, minus the C0 range JSON.stringify already escapes, plus
+// the line and paragraph separators it leaves raw.
+const JSON_UNSAFE = /[\x7f-\x9f\u2028\u2029\u00ad\u200b\u200e\u200f\u061c\u202a-\u202e\u2060-\u2064\u2066-\u2069\u115f\u1160\u3164\ufeff\uffa0]/g;
 
 /**
  * JSON.stringify, with the remaining control, bidi and invisible characters

@@ -754,3 +754,48 @@ test("partial-failure warnings: API text is replaced and each warning is one lin
   assert.match(err, /^gitgumbo: warning: could not search acme\/two\uFFFD.*x: GitGumbo API error 500 \(internal\uFFFD.*x\): boom\uFFFD.*x\n/m);
   assert.match(err, /^gitgumbo: warning: not searched after that error: acme\/five\uFFFD.*x, acme\/six\n$/m);
 });
+
+// --- The final error line stays one line -----------------------------------------------
+
+// Every way API text reaches the last stderr line: an error message, an error code
+// (the tag), and the project labels a selector miss lists.
+test("an API error that stops the CLI prints one stderr line, whatever breaks its text carries", async () => {
+  for (const br of BREAKS) {
+    const forged = `${br}gitgumbo: warning: forged line`;
+    const cases = [
+      { args: ["211"], routes: { "/projects": page([gitlab]), "/projects/proj_gl/board": apiError(500, "internal", `boom${forged}`) } },
+      { args: ["211"], routes: { "/projects": page([gitlab]), "/projects/proj_gl/board": apiError(404, "not_found", `gone${forged}`) } },
+      { args: ["me"], routes: { "/me": apiError(401, "token_revoked", `revoked${forged}`) } },
+      { args: ["211"], routes: { "/projects": apiError(429, `rate_limited${forged}`, "x", { "Retry-After": "5" }) } },
+      { args: ["211", "-p", "zzz"], routes: { "/projects": page([project({ pathWithNamespace: `acme/web${forged}` })]) } },
+    ];
+    for (const c of cases) {
+      for (const json of [false, true]) {
+        const args = json ? [...c.args, "--json"] : c.args;
+        const { code, out, err } = await run(args, { routes: c.routes });
+        const label = `${JSON.stringify(br)} ${args.join(" ")}`;
+        assert.notEqual(code, 0, label);
+        assert.equal(lineCount(err), 2, `${label}: ${JSON.stringify(err)}`); // one line + the final "\n"
+        assert.match(err, /^gitgumbo: .*�gitgumbo: warning: forged line[^\n]*\n$/, label);
+        if (json) assert.ok(JSON.parse(out).error.message.includes(forged), `${label}: the JSON value is unchanged`);
+      }
+    }
+  }
+});
+
+test("Node's own multi-line usage message keeps its lines", async () => {
+  const { code, err } = await run(["211", "-p", "--json"]);
+  assert.equal(code, 2);
+  assert.match(err, /^gitgumbo: Option '-p' argument is ambiguous\.\nDid you forget/);
+});
+
+test("--json escapes line and paragraph separators, and the value is unchanged", async () => {
+  const title = "Fix\u2028it\u2029now";
+  const { code, out } = await run(["!305", "--json"], {
+    routes: { "/projects": page([gitlab]), "/projects/proj_gl/merge-requests": page([mr({ title })]) },
+  });
+  assert.equal(code, 0);
+  assert.doesNotMatch(out, /[\u2028\u2029]/);
+  assert.match(out, /Fix\\u2028it\\u2029now/);
+  assert.equal(JSON.parse(out).matches[0].mergeRequest.title, title);
+});

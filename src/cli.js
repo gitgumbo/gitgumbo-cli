@@ -101,11 +101,13 @@ export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0"
     const code = known ? err.exitCode : parseError ? EXIT.USAGE : EXIT.UNAVAILABLE;
     const message = known || parseError ? err.message : `Unexpected error: ${err?.stack ?? err}`;
     if (json) {
-      // error.code is the API's error code; Node's own parse-error code is not one.
+      // Node's parse-error code is not an API code, so it is left out.
       const apiCode = parseError ? undefined : err.code;
       print(stdout, toJson({ error: { message, exitCode: code, status: err.status, code: apiCode, retryAfter: err.retryAfter } }));
     }
-    stderr.write(`gitgumbo: ${clean(message)}\n`);
+    // A CliError can carry API text (an error message or code, project names), so
+    // it prints on one line. Node's usage messages and a stack keep their lines.
+    stderr.write(`gitgumbo: ${known ? cleanLine(message) : clean(message)}\n`);
     return code;
   }
 }
