@@ -398,6 +398,22 @@ test("messages name the server by its origin only", async () => {
   assert.match(r.err, /Create a new one at https:\/\/gg\.test\/settings\/api\./);
   const n = await run(["me"], { env: { GITGUMBO_URL: "https://gg.test/", GITGUMBO_TOKEN: "" } });
   assert.match(n.err, /Create a token at https:\/\/gg\.test\/settings\/api,/);
+
+  // A path in GITGUMBO_URL is kept for requests, but the settings link is the origin's.
+  const prefixed = "https://gg.test/gitgumbo/";
+  const p = await run(["me"], {
+    env: { GITGUMBO_URL: prefixed },
+    routes: { "/gitgumbo/api/v1/me": apiError(401, "token_revoked", "revoked") },
+  });
+  assert.equal(p.calls[0].url.href, "https://gg.test/gitgumbo/api/v1/me");
+  assert.equal(p.code, 3);
+  assert.match(p.err, /Create a new one at https:\/\/gg\.test\/settings\/api\.\n$/);
+  assert.doesNotMatch(p.err, /gg\.test\/gitgumbo/);
+  const pn = await run(["me"], { env: { GITGUMBO_URL: prefixed, GITGUMBO_TOKEN: "" } });
+  assert.equal(pn.code, 2);
+  assert.match(pn.err, /Create a token at https:\/\/gg\.test\/settings\/api,/);
+  assert.doesNotMatch(pn.err, /gg\.test\/gitgumbo/);
+  assert.equal(pn.calls.length, 0);
 });
 
 test("GITGUMBO_URL must be https, except http on loopback", async () => {
@@ -475,12 +491,39 @@ test("a project that fails stops new requests but keeps a match found elsewhere"
   assert.match(err, /not searched after that error: acme\/five, acme\/six/);
   const started = paths(calls).filter((p) => p.endsWith("/board")).map((p) => p.split("/")[2]);
   assert.deepEqual(started, ["p_one", "p_two", "p_three", "p_four"], "no project is started after the error");
+  // The searches in flight finish (their issue scans); nothing else is requested.
+  assert.deepEqual([...paths(calls)].sort(), [
+    "/projects?limit=100",
+    "/projects/p_one/board", "/projects/p_one/issues?state=all&limit=100",
+    "/projects/p_two/board",
+    "/projects/p_three/board", "/projects/p_three/issues?state=all&limit=100",
+    "/projects/p_four/board", "/projects/p_four/issues?state=all&limit=100",
+  ].sort());
 
   const j = await run(["211", "--json"], { routes });
   assert.equal(j.code, 0);
   const result = JSON.parse(j.out);
   assert.deepEqual(Object.keys(result), ["ref", "matches", "searched", "incomplete"]);
   assert.deepEqual(result.searched, ["acme/one", "acme/three", "acme/four"]);
+});
+
+test("an MR lookup also stops new requests after a project fails", async () => {
+  const names = ["one", "two", "three", "four", "five", "six"];
+  const projects = names.map((n) => project({ id: `p_${n}`, name: n, nameWithNamespace: `Acme / ${n}`, pathWithNamespace: `acme/${n}` }));
+  const routes = { "/projects": page(projects) };
+  for (const n of names) routes[`/projects/p_${n}/merge-requests`] = page([]);
+  routes["/projects/p_one/merge-requests"] = page([mr()]);
+  routes["/projects/p_two/merge-requests"] = apiError(500, "internal", "boom");
+
+  const { code, out, err, calls } = await run(["!305"], { routes });
+  assert.equal(code, 0, err);
+  assert.match(out, /^!305 {2}Fix redirect loop on expired session {2}GitLab acme\/one$/m);
+  assert.match(err, /warning: could not search acme\/two: GitGumbo API error 500 \(internal\): boom/);
+  assert.match(err, /not searched after that error: acme\/five, acme\/six/);
+  assert.deepEqual([...paths(calls)].sort(), [
+    "/projects?limit=100",
+    ...["one", "two", "three", "four"].map((n) => `/projects/p_${n}/merge-requests?state=all&limit=100`),
+  ].sort());
 });
 
 test("a project that fails with no match anywhere is reported as the error", async () => {
@@ -636,4 +679,72 @@ test("ZWJ emoji, ZWNJ words and tag-sequence flags print unchanged", async () =>
     const j = await run(["!305", "--json"], { routes: titled(word) });
     assert.ok(j.out.includes(`"title": "${word}"`), JSON.stringify(j.out));
   }
+});
+
+// --- Every view replaces control characters and stays on its lines -------------------
+
+const DIRTY = `${NASTY}\n\u2028x`;
+const noRawText = (s, label) => {
+  assert.doesNotMatch(withoutColour(s), RAW_CONTROL, label);
+  assert.doesNotMatch(s, /[\r\u2028\u2029]/, label);
+};
+
+test("projects: API text is replaced and each project is one line", async () => {
+  const dirty = project({ id: `proj${DIRTY}`, pathWithNamespace: `acme/web${DIRTY}`, provider: `gitlab${DIRTY}` });
+  for (const tty of [false, true]) {
+    const { code, out } = await run(["projects"], { routes: { "/projects": page([dirty, github]) }, tty });
+    assert.equal(code, 0);
+    noRawText(out, `tty ${tty}`);
+    assert.equal(lineCount(out), 3, JSON.stringify(out));
+    assert.match(withoutColour(out), /^acme\/web\uFFFD.*x {2}gitlab\uFFFD.*x · id proj\uFFFD.*x$/m);
+  }
+});
+
+test("me: API text is replaced and the summary keeps its three lines", async () => {
+  const dirty = me({
+    firm: { id: "firm_1", name: `Acme${DIRTY}`, plan: `pro${DIRTY}` },
+    token: { name: `laptop${DIRTY}`, scopes: [`read${DIRTY}`], expiresAt: null },
+  });
+  for (const tty of [false, true]) {
+    const { code, out } = await run(["me"], { routes: { "/me": dirty }, tty });
+    assert.equal(code, 0);
+    noRawText(out, `tty ${tty}`);
+    assert.equal(lineCount(out), 4, JSON.stringify(out));
+    assert.match(withoutColour(out), /^Acme\uFFFD.*x {2}pro\uFFFD.*x plan\ntoken "laptop\uFFFD.*x" \(read\uFFFD.*x\), no expiry\nrate limit /);
+  }
+});
+
+test("not found: project names in the message are replaced and it stays one line", async () => {
+  const { code, out, err } = await run(["211"], {
+    routes: {
+      "/projects": page([project({ pathWithNamespace: `acme/web${DIRTY}` })]),
+      "/projects/proj_gl/board": board([]),
+      "/projects/proj_gl/issues": (url) => page([issue({ number: 1 })], `c${url.searchParams.get("cursor") ?? 0}x`),
+    },
+  });
+  assert.equal(code, 1);
+  assert.equal(out, "");
+  noRawText(err);
+  assert.equal(lineCount(err), 2, JSON.stringify(err));
+  assert.match(err, /^Issue #211 not found in acme\/web\uFFFD.*x\. Only the 500 .* searched in acme\/web\uFFFD.*x\. /);
+});
+
+test("partial-failure warnings: API text is replaced and each warning is one line", async () => {
+  const names = ["one", `two${DIRTY}`, "three", "four", `five${DIRTY}`, "six"];
+  const projects = names.map((n, i) => project({ id: `p_${i}`, name: n, nameWithNamespace: null, pathWithNamespace: `acme/${n}` }));
+  const routes = { "/projects": page(projects) };
+  names.forEach((_, i) => {
+    routes[`/projects/p_${i}/board`] = board([]);
+    routes[`/projects/p_${i}/issues`] = page([]);
+  });
+  routes["/projects/p_0/issues"] = page([issue({ linkedMergeRequests: [] })]);
+  routes["/projects/p_1/board"] = apiError(500, `internal${DIRTY}`, `boom${DIRTY}`);
+
+  const { code, out, err } = await run(["211"], { routes });
+  assert.equal(code, 0, err);
+  assert.match(out, /#211 {2}Login redirect loops/);
+  noRawText(err);
+  assert.equal(lineCount(err), 3, JSON.stringify(err));
+  assert.match(err, /^gitgumbo: warning: could not search acme\/two\uFFFD.*x: GitGumbo API error 500 \(internal\uFFFD.*x\): boom\uFFFD.*x\n/m);
+  assert.match(err, /^gitgumbo: warning: not searched after that error: acme\/five\uFFFD.*x, acme\/six\n$/m);
 });
