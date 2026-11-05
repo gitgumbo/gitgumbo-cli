@@ -4,7 +4,7 @@
 import { parseArgs } from "node:util";
 import { createClient, CliError, EXIT } from "./api.js";
 import { lookup, parseRef } from "./lookup.js";
-import { clean, painter, renderLookup, renderMe, renderNotFound, renderProjects, toJson } from "./format.js";
+import { clean, cleanLine, painter, renderLookup, renderMe, renderNotFound, renderProjects, toJson } from "./format.js";
 
 export const DEFAULT_URL = "https://gitgumbo.com";
 
@@ -82,10 +82,10 @@ export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0"
     const selectors = values.project ?? splitList(env.GITGUMBO_PROJECT);
     const { failures, ...result } = await lookup(client, command.ref, selectors);
     for (const { project, message } of failures.failed) {
-      stderr.write(`gitgumbo: warning: could not search ${clean(project)}: ${clean(message)}\n`);
+      stderr.write(`gitgumbo: warning: could not search ${cleanLine(project)}: ${cleanLine(message)}\n`);
     }
     if (failures.skipped.length) {
-      stderr.write(`gitgumbo: warning: not searched after that error: ${clean(failures.skipped.join(", "))}\n`);
+      stderr.write(`gitgumbo: warning: not searched after that error: ${cleanLine(failures.skipped.join(", "))}\n`);
     }
     if (json) {
       print(stdout, toJson(result));

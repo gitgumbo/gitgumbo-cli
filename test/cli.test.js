@@ -533,3 +533,98 @@ test("--json with a bad argument still prints the JSON error", async () => {
     assert.match(err, /Unknown option/);
   }
 });
+
+// --- API text stays on one line ------------------------------------------------------
+
+const BREAKS = ["\n", "\r", "\r\n", "\u2028", "\u2029"];
+const lineCount = (s) => s.split("\n").length;
+
+/** Every field the issue and MR views print, each carrying `t`. */
+function textRoutes(t) {
+  return {
+    "/projects": page([project({ pathWithNamespace: `acme/web${t}` })]),
+    "/projects/proj_gl/board": board([column(`Doing${t}`, [issue({
+      title: `Login${t}x`, assignees: [person(null, `Grace${t}Liu`)], linkedMergeRequests: [mrCompact()],
+    })])]),
+    "/projects/proj_gl/merge-requests": page([mr({
+      title: `Fix${t}it`, reviewers: [person(null, `Bo${t}b`)], changesRequestedBy: [person(null, `Bo${t}b`)],
+    })]),
+  };
+}
+
+const PRINTED = {
+  211: [/#211 {2}Login\uFFFD+x {2}GitLab acme\/web\uFFFD+$/m, /Doing\uFFFD+ · open · Grace\uFFFD+Liu/, /!305 {2}Fix\uFFFD+it$/m, /changes requested by Bo\uFFFD+b/],
+  "!305": [/^!305 {2}Fix\uFFFD+it {2}GitLab acme\/web\uFFFD+$/m, /reviewers Bo\uFFFD+b/, /changes requested by Bo\uFFFD+b/],
+};
+
+test("a line break in API text never starts an output line, coloured or not", async () => {
+  for (const ref of ["211", "!305"]) {
+    for (const mode of [{}, { tty: true }, { tty: true, flags: ["--no-color"] }]) {
+      const argv = [ref, ...(mode.flags ?? [])];
+      const base = await run(argv, { routes: textRoutes(""), tty: mode.tty });
+      assert.equal(base.code, 0);
+      for (const t of BREAKS) {
+        const label = `${argv.join(" ")} ${JSON.stringify(t)} ${JSON.stringify(mode)}`;
+        const r = await run(argv, { routes: textRoutes(t), tty: mode.tty });
+        assert.equal(r.code, 0, label);
+        assert.equal(lineCount(r.out), lineCount(base.out), label);
+        assert.doesNotMatch(r.out, /[\r\u2028\u2029]/, label);
+        for (const re of PRINTED[ref]) assert.match(withoutColour(r.out), re, label);
+      }
+    }
+  }
+});
+
+test("a title cannot print a line that looks like the next one", async () => {
+  const { code, out } = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([column("Doing", [issue({
+        title: "Login\n           Done · closed · Grace Liu", linkedMergeRequests: [],
+      })])]),
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(out, /^#211 {2}Login\uFFFD {11}Done · closed · Grace Liu {2}GitLab acme\/web$/m);
+  assert.doesNotMatch(out, /^\s+Done · closed/m);
+});
+
+test("a tab in API text prints as one space", async () => {
+  const { code, out } = await run(["211"], { routes: textRoutes("\t") });
+  assert.equal(code, 0);
+  assert.doesNotMatch(out, /\t/);
+  assert.match(out, /^#211 {2}Login x {2}GitLab acme\/web $/m);
+  assert.match(out, /Doing {2}· open · Grace Liu/);
+});
+
+// --- Invisible format characters -------------------------------------------------------
+
+const INVISIBLE = ["\u00ad", "\u200b", "\u2060", "\u2061", "\u2062", "\u2063", "\u2064", "\ufeff", "\u115f", "\u1160", "\u3164", "\uffa0"];
+// A ZWJ family emoji, a Persian word with a ZWNJ, and a tag-sequence flag (England).
+const KEPT = ["\u{1F468}\u200d\u{1F469}\u200d\u{1F467}", "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645", "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}"];
+const titled = (title) => ({ "/projects": page([gitlab]), "/projects/proj_gl/merge-requests": page([mr({ title })]) });
+
+test("invisible format characters are replaced, and escaped in --json", async () => {
+  for (const ch of INVISIBLE) {
+    const hex = ch.charCodeAt(0).toString(16).padStart(4, "0");
+    const h = await run(["!305"], { routes: titled(`Fix${ch}it`) });
+    assert.equal(h.code, 0, hex);
+    assert.ok(!h.out.includes(ch), `U+${hex} printed raw`);
+    assert.match(h.out, /^!305 {2}Fix\uFFFDit {2}GitLab/m, hex);
+
+    const j = await run(["!305", "--json"], { routes: titled(`Fix${ch}it`) });
+    assert.ok(!j.out.includes(ch), `U+${hex} printed raw in --json`);
+    assert.ok(j.out.includes(`"title": "Fix\\u${hex}it"`), hex);
+    assert.equal(JSON.parse(j.out).matches[0].mergeRequest.title, `Fix${ch}it`, hex);
+  }
+});
+
+test("ZWJ emoji, ZWNJ words and tag-sequence flags print unchanged", async () => {
+  for (const word of KEPT) {
+    const h = await run(["!305"], { routes: titled(word) });
+    assert.equal(h.code, 0);
+    assert.ok(h.out.includes(`!305  ${word}  GitLab`), JSON.stringify(h.out));
+    const j = await run(["!305", "--json"], { routes: titled(word) });
+    assert.ok(j.out.includes(`"title": "${word}"`), JSON.stringify(j.out));
+  }
+});

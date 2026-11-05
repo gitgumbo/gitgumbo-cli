@@ -3,19 +3,32 @@
 import { formatDuration } from "./api.js";
 import { MAX_PAGES, projectLabel } from "./lookup.js";
 
-// C0/C1 controls (except tab and newline), DEL, and the bidi controls. Text from
-// the API (titles, branch and project names, error messages) can carry them, and
-// a terminal would act on them. Replaced at render time, whatever the colour mode.
-const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f-\x9f\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g;
+// C0/C1 controls (except tab and newline), DEL, the bidi controls, and the
+// invisible format characters that can hide or fake text: soft hyphen, zero
+// width space, word joiner and invisible operators, BOM, and the Hangul fillers.
+// ZWNJ (U+200C) and ZWJ (U+200D) stay: Persian words and emoji sequences need
+// them. Text from the API (titles, branch and project names, error messages) can
+// carry any of these, and a terminal would act on them or show nothing. Replaced
+// at render time, whatever the colour mode.
+const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f-\x9f\u00ad\u200b\u200e\u200f\u061c\u202a-\u202e\u2060-\u2064\u2066-\u2069\u115f\u1160\u3164\ufeff\uffa0]/g;
 
-/** Replace terminal control and bidi characters with U+FFFD. */
+/** Replace terminal control, bidi and invisible characters with U+FFFD. */
 export function clean(s) {
   return String(s).replace(UNSAFE, "\uFFFD");
 }
 
-/** `clean` every string in an API value, leaving its shape alone. */
+// Line and paragraph breaks. No API field spans lines, so one that does would
+// print a line the API did not send.
+const LINE_BREAK = /[\n\r\u2028\u2029]/g;
+
+/** `clean`, and keep the text on one line: a break becomes U+FFFD, a tab a space. */
+export function cleanLine(s) {
+  return clean(s).replace(LINE_BREAK, "\uFFFD").replace(/\t/g, " ");
+}
+
+/** `cleanLine` every string in an API value, leaving its shape alone. */
 function scrub(value) {
-  if (typeof value === "string") return clean(value);
+  if (typeof value === "string") return cleanLine(value);
   if (Array.isArray(value)) return value.map(scrub);
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrub(v)]));
@@ -24,11 +37,12 @@ function scrub(value) {
 }
 
 // The same characters, minus the C0 range JSON.stringify already escapes.
-const JSON_UNSAFE = /[\x7f-\x9f\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g;
+const JSON_UNSAFE = /[\x7f-\x9f\u00ad\u200b\u200e\u200f\u061c\u202a-\u202e\u2060-\u2064\u2066-\u2069\u115f\u1160\u3164\ufeff\uffa0]/g;
 
 /**
- * JSON.stringify, with the remaining control and bidi characters written as
- * \uXXXX escapes. The JSON value is unchanged; only its text is safe to print.
+ * JSON.stringify, with the remaining control, bidi and invisible characters
+ * written as \uXXXX escapes. The JSON value is unchanged; only its text is safe
+ * to print.
  */
 export function toJson(value) {
   return JSON.stringify(value, null, 2)
