@@ -519,11 +519,17 @@ test("an MR lookup also stops new requests after a project fails", async () => {
   assert.equal(code, 0, err);
   assert.match(out, /^!305 {2}Fix redirect loop on expired session {2}GitLab acme\/one$/m);
   assert.match(err, /warning: could not search acme\/two: GitGumbo API error 500 \(internal\): boom/);
-  assert.match(err, /not searched after that error: acme\/five, acme\/six/);
-  assert.deepEqual([...paths(calls)].sort(), [
-    "/projects?limit=100",
-    ...["one", "two", "three", "four"].map((n) => `/projects/p_${n}/merge-requests?state=all&limit=100`),
-  ].sort());
+  // Each MR search is one request, so a fast project may finish and let a fifth
+  // start before the failure lands. What must hold whatever the timing: each
+  // project is asked once, at least one is never started, and the warning names
+  // exactly the projects that were never asked.
+  const asked = paths(calls).filter((p) => p !== "/projects?limit=100").map((p) => p.split("/")[2].slice(2));
+  assert.deepEqual(asked.filter((n, i) => asked.indexOf(n) !== i), [], "no project is asked twice");
+  for (const n of asked) assert.equal(`/projects/p_${n}/merge-requests?state=all&limit=100`, paths(calls).find((p) => p.includes(`/p_${n}/`)));
+  const never = names.filter((n) => !asked.includes(n));
+  assert.ok(never.length > 0, "some project is never started after the error");
+  assert.ok(asked.length >= 4, "the first four start together");
+  assert.match(err, new RegExp(`not searched after that error: ${never.map((n) => `acme/${n}`).join(", ")}\\n`));
 });
 
 test("a project that fails with no match anywhere is reported as the error", async () => {
