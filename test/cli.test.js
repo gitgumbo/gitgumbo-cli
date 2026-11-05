@@ -398,13 +398,29 @@ test("messages name the server by its origin only", async () => {
   assert.match(r.err, /Create a new one at https:\/\/gg\.test\/settings\/api\./);
   const n = await run(["me"], { env: { GITGUMBO_URL: "https://gg.test/", GITGUMBO_TOKEN: "" } });
   assert.match(n.err, /Create a token at https:\/\/gg\.test\/settings\/api,/);
+
+  // A path in GITGUMBO_URL is kept for requests, but the settings link is the origin's.
+  const prefixed = "https://gg.test/gitgumbo/";
+  const p = await run(["me"], {
+    env: { GITGUMBO_URL: prefixed },
+    routes: { "/gitgumbo/api/v1/me": apiError(401, "token_revoked", "revoked") },
+  });
+  assert.equal(p.calls[0].url.href, "https://gg.test/gitgumbo/api/v1/me");
+  assert.equal(p.code, 3);
+  assert.match(p.err, /Create a new one at https:\/\/gg\.test\/settings\/api\.\n$/);
+  assert.doesNotMatch(p.err, /gg\.test\/gitgumbo/);
+  const pn = await run(["me"], { env: { GITGUMBO_URL: prefixed, GITGUMBO_TOKEN: "" } });
+  assert.equal(pn.code, 2);
+  assert.match(pn.err, /Create a token at https:\/\/gg\.test\/settings\/api,/);
+  assert.doesNotMatch(pn.err, /gg\.test\/gitgumbo/);
+  assert.equal(pn.calls.length, 0);
 });
 
 test("GITGUMBO_URL must be https, except http on loopback", async () => {
   for (const url of ["http://gg.test", "ftp://gg.test", "file:///etc/passwd", "javascript:alert(1)", "http://10.0.0.1"]) {
     const { code, err, calls } = await run(["me"], { env: { GITGUMBO_URL: url }, routes: { "/me": me() } });
     assert.equal(code, 2, url);
-    assert.match(err, /GITGUMBO_URL must be https/);
+    assert.match(err, /GITGUMBO_URL must be https \(http only for localhost, 127\.0\.0\.1 or \[::1\]\)\./);
     assert.equal(calls.length, 0);
   }
   for (const url of ["http://localhost:3033", "http://127.0.0.1:3033", "http://[::1]:3033", "https://gg.test"]) {
@@ -475,12 +491,45 @@ test("a project that fails stops new requests but keeps a match found elsewhere"
   assert.match(err, /not searched after that error: acme\/five, acme\/six/);
   const started = paths(calls).filter((p) => p.endsWith("/board")).map((p) => p.split("/")[2]);
   assert.deepEqual(started, ["p_one", "p_two", "p_three", "p_four"], "no project is started after the error");
+  // The searches in flight finish (their issue scans); nothing else is requested.
+  assert.deepEqual([...paths(calls)].sort(), [
+    "/projects?limit=100",
+    "/projects/p_one/board", "/projects/p_one/issues?state=all&limit=100",
+    "/projects/p_two/board",
+    "/projects/p_three/board", "/projects/p_three/issues?state=all&limit=100",
+    "/projects/p_four/board", "/projects/p_four/issues?state=all&limit=100",
+  ].sort());
 
   const j = await run(["211", "--json"], { routes });
   assert.equal(j.code, 0);
   const result = JSON.parse(j.out);
   assert.deepEqual(Object.keys(result), ["ref", "matches", "searched", "incomplete"]);
   assert.deepEqual(result.searched, ["acme/one", "acme/three", "acme/four"]);
+});
+
+test("an MR lookup also stops new requests after a project fails", async () => {
+  const names = ["one", "two", "three", "four", "five", "six"];
+  const projects = names.map((n) => project({ id: `p_${n}`, name: n, nameWithNamespace: `Acme / ${n}`, pathWithNamespace: `acme/${n}` }));
+  const routes = { "/projects": page(projects) };
+  for (const n of names) routes[`/projects/p_${n}/merge-requests`] = page([]);
+  routes["/projects/p_one/merge-requests"] = page([mr()]);
+  routes["/projects/p_two/merge-requests"] = apiError(500, "internal", "boom");
+
+  const { code, out, err, calls } = await run(["!305"], { routes });
+  assert.equal(code, 0, err);
+  assert.match(out, /^!305 {2}Fix redirect loop on expired session {2}GitLab acme\/one$/m);
+  assert.match(err, /warning: could not search acme\/two: GitGumbo API error 500 \(internal\): boom/);
+  // Each MR search is one request, so a fast project may finish and let a fifth
+  // start before the failure lands. What must hold whatever the timing: each
+  // project is asked once, at least one is never started, and the warning names
+  // exactly the projects that were never asked.
+  const asked = paths(calls).filter((p) => p !== "/projects?limit=100").map((p) => p.split("/")[2].slice(2));
+  assert.deepEqual(asked.filter((n, i) => asked.indexOf(n) !== i), [], "no project is asked twice");
+  for (const n of asked) assert.equal(`/projects/p_${n}/merge-requests?state=all&limit=100`, paths(calls).find((p) => p.includes(`/p_${n}/`)));
+  const never = names.filter((n) => !asked.includes(n));
+  assert.ok(never.length > 0, "some project is never started after the error");
+  assert.ok(asked.length >= 4, "the first four start together");
+  assert.match(err, new RegExp(`not searched after that error: ${never.map((n) => `acme/${n}`).join(", ")}\\n`));
 });
 
 test("a project that fails with no match anywhere is reported as the error", async () => {
@@ -524,12 +573,229 @@ test("a draft MR shows its state as well as the draft mark", async () => {
 // --- --json usage errors -------------------------------------------------------------
 
 test("--json with a bad argument still prints the JSON error", async () => {
-  for (const args of [["--json", "--bogus"], ["--bogus", "--json"], ["211", "--json", "-x"]]) {
+  const cases = [
+    [["--json", "--bogus"], /Unknown option/],
+    [["--bogus", "--json"], /Unknown option/],
+    [["211", "--json", "-x"], /Unknown option/],
+    [["211", "--json=1"], /--json.* does not take an argument/],
+    [["--json=", "211"], /--json.* does not take an argument/],
+  ];
+  for (const [args, message] of cases) {
     const { code, out, err } = await run(args);
     assert.equal(code, 2, args.join(" "));
     const { error } = JSON.parse(out);
     assert.equal(error.exitCode, 2);
-    assert.match(error.message, /Unknown option/);
-    assert.match(err, /Unknown option/);
+    assert.match(error.message, message);
+    assert.equal(error.code, undefined, "no Node-internal code in error.code");
+    assert.ok(!out.includes("ERR_PARSE_ARGS"), args.join(" "));
+    assert.match(err, message);
   }
+});
+
+// --- API text stays on one line ------------------------------------------------------
+
+const BREAKS = ["\n", "\r", "\r\n", "\u2028", "\u2029"];
+const lineCount = (s) => s.split("\n").length;
+
+/** Every field the issue and MR views print, each carrying `t`. */
+function textRoutes(t) {
+  return {
+    "/projects": page([project({ pathWithNamespace: `acme/web${t}` })]),
+    "/projects/proj_gl/board": board([column(`Doing${t}`, [issue({
+      title: `Login${t}x`, assignees: [person(null, `Grace${t}Liu`)], linkedMergeRequests: [mrCompact()],
+    })])]),
+    "/projects/proj_gl/merge-requests": page([mr({
+      title: `Fix${t}it`, reviewers: [person(null, `Bo${t}b`)], changesRequestedBy: [person(null, `Bo${t}b`)],
+    })]),
+  };
+}
+
+const PRINTED = {
+  211: [/#211 {2}Login\uFFFD+x {2}GitLab acme\/web\uFFFD+$/m, /Doing\uFFFD+ · open · Grace\uFFFD+Liu/, /!305 {2}Fix\uFFFD+it$/m, /changes requested by Bo\uFFFD+b/],
+  "!305": [/^!305 {2}Fix\uFFFD+it {2}GitLab acme\/web\uFFFD+$/m, /reviewers Bo\uFFFD+b/, /changes requested by Bo\uFFFD+b/],
+};
+
+test("a line break in API text never starts an output line, coloured or not", async () => {
+  for (const ref of ["211", "!305"]) {
+    for (const mode of [{}, { tty: true }, { tty: true, flags: ["--no-color"] }]) {
+      const argv = [ref, ...(mode.flags ?? [])];
+      const base = await run(argv, { routes: textRoutes(""), tty: mode.tty });
+      assert.equal(base.code, 0);
+      for (const t of BREAKS) {
+        const label = `${argv.join(" ")} ${JSON.stringify(t)} ${JSON.stringify(mode)}`;
+        const r = await run(argv, { routes: textRoutes(t), tty: mode.tty });
+        assert.equal(r.code, 0, label);
+        assert.equal(lineCount(r.out), lineCount(base.out), label);
+        assert.doesNotMatch(r.out, /[\r\u2028\u2029]/, label);
+        for (const re of PRINTED[ref]) assert.match(withoutColour(r.out), re, label);
+      }
+    }
+  }
+});
+
+test("a title cannot print a line that looks like the next one", async () => {
+  const { code, out } = await run(["211"], {
+    routes: {
+      "/projects": page([gitlab]),
+      "/projects/proj_gl/board": board([column("Doing", [issue({
+        title: "Login\n           Done · closed · Grace Liu", linkedMergeRequests: [],
+      })])]),
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(out, /^#211 {2}Login\uFFFD {11}Done · closed · Grace Liu {2}GitLab acme\/web$/m);
+  assert.doesNotMatch(out, /^\s+Done · closed/m);
+});
+
+test("a tab in API text prints as one space", async () => {
+  const { code, out } = await run(["211"], { routes: textRoutes("\t") });
+  assert.equal(code, 0);
+  assert.doesNotMatch(out, /\t/);
+  assert.match(out, /^#211 {2}Login x {2}GitLab acme\/web $/m);
+  assert.match(out, /Doing {2}· open · Grace Liu/);
+});
+
+// --- Invisible format characters -------------------------------------------------------
+
+const INVISIBLE = ["\u00ad", "\u200b", "\u2060", "\u2061", "\u2062", "\u2063", "\u2064", "\ufeff", "\u115f", "\u1160", "\u3164", "\uffa0"];
+// A ZWJ family emoji, a Persian word with a ZWNJ, and a tag-sequence flag (England).
+const KEPT = ["\u{1F468}\u200d\u{1F469}\u200d\u{1F467}", "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645", "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}"];
+const titled = (title) => ({ "/projects": page([gitlab]), "/projects/proj_gl/merge-requests": page([mr({ title })]) });
+
+test("invisible format characters are replaced, and escaped in --json", async () => {
+  for (const ch of INVISIBLE) {
+    const hex = ch.charCodeAt(0).toString(16).padStart(4, "0");
+    const h = await run(["!305"], { routes: titled(`Fix${ch}it`) });
+    assert.equal(h.code, 0, hex);
+    assert.ok(!h.out.includes(ch), `U+${hex} printed raw`);
+    assert.match(h.out, /^!305 {2}Fix\uFFFDit {2}GitLab/m, hex);
+
+    const j = await run(["!305", "--json"], { routes: titled(`Fix${ch}it`) });
+    assert.ok(!j.out.includes(ch), `U+${hex} printed raw in --json`);
+    assert.ok(j.out.includes(`"title": "Fix\\u${hex}it"`), hex);
+    assert.equal(JSON.parse(j.out).matches[0].mergeRequest.title, `Fix${ch}it`, hex);
+  }
+});
+
+test("ZWJ emoji, ZWNJ words and tag-sequence flags print unchanged", async () => {
+  for (const word of KEPT) {
+    const h = await run(["!305"], { routes: titled(word) });
+    assert.equal(h.code, 0);
+    assert.ok(h.out.includes(`!305  ${word}  GitLab`), JSON.stringify(h.out));
+    const j = await run(["!305", "--json"], { routes: titled(word) });
+    assert.ok(j.out.includes(`"title": "${word}"`), JSON.stringify(j.out));
+  }
+});
+
+// --- Every view replaces control characters and stays on its lines -------------------
+
+const DIRTY = `${NASTY}\n\u2028x`;
+const noRawText = (s, label) => {
+  assert.doesNotMatch(withoutColour(s), RAW_CONTROL, label);
+  assert.doesNotMatch(s, /[\r\u2028\u2029]/, label);
+};
+
+test("projects: API text is replaced and each project is one line", async () => {
+  const dirty = project({ id: `proj${DIRTY}`, pathWithNamespace: `acme/web${DIRTY}`, provider: `gitlab${DIRTY}` });
+  for (const tty of [false, true]) {
+    const { code, out } = await run(["projects"], { routes: { "/projects": page([dirty, github]) }, tty });
+    assert.equal(code, 0);
+    noRawText(out, `tty ${tty}`);
+    assert.equal(lineCount(out), 3, JSON.stringify(out));
+    assert.match(withoutColour(out), /^acme\/web\uFFFD.*x {2}gitlab\uFFFD.*x · id proj\uFFFD.*x$/m);
+  }
+});
+
+test("me: API text is replaced and the summary keeps its three lines", async () => {
+  const dirty = me({
+    firm: { id: "firm_1", name: `Acme${DIRTY}`, plan: `pro${DIRTY}` },
+    token: { name: `laptop${DIRTY}`, scopes: [`read${DIRTY}`], expiresAt: null },
+  });
+  for (const tty of [false, true]) {
+    const { code, out } = await run(["me"], { routes: { "/me": dirty }, tty });
+    assert.equal(code, 0);
+    noRawText(out, `tty ${tty}`);
+    assert.equal(lineCount(out), 4, JSON.stringify(out));
+    assert.match(withoutColour(out), /^Acme\uFFFD.*x {2}pro\uFFFD.*x plan\ntoken "laptop\uFFFD.*x" \(read\uFFFD.*x\), no expiry\nrate limit /);
+  }
+});
+
+test("not found: project names in the message are replaced and it stays one line", async () => {
+  const { code, out, err } = await run(["211"], {
+    routes: {
+      "/projects": page([project({ pathWithNamespace: `acme/web${DIRTY}` })]),
+      "/projects/proj_gl/board": board([]),
+      "/projects/proj_gl/issues": (url) => page([issue({ number: 1 })], `c${url.searchParams.get("cursor") ?? 0}x`),
+    },
+  });
+  assert.equal(code, 1);
+  assert.equal(out, "");
+  noRawText(err);
+  assert.equal(lineCount(err), 2, JSON.stringify(err));
+  assert.match(err, /^Issue #211 not found in acme\/web\uFFFD.*x\. Only the 500 .* searched in acme\/web\uFFFD.*x\. /);
+});
+
+test("partial-failure warnings: API text is replaced and each warning is one line", async () => {
+  const names = ["one", `two${DIRTY}`, "three", "four", `five${DIRTY}`, "six"];
+  const projects = names.map((n, i) => project({ id: `p_${i}`, name: n, nameWithNamespace: null, pathWithNamespace: `acme/${n}` }));
+  const routes = { "/projects": page(projects) };
+  names.forEach((_, i) => {
+    routes[`/projects/p_${i}/board`] = board([]);
+    routes[`/projects/p_${i}/issues`] = page([]);
+  });
+  routes["/projects/p_0/issues"] = page([issue({ linkedMergeRequests: [] })]);
+  routes["/projects/p_1/board"] = apiError(500, `internal${DIRTY}`, `boom${DIRTY}`);
+
+  const { code, out, err } = await run(["211"], { routes });
+  assert.equal(code, 0, err);
+  assert.match(out, /#211 {2}Login redirect loops/);
+  noRawText(err);
+  assert.equal(lineCount(err), 3, JSON.stringify(err));
+  assert.match(err, /^gitgumbo: warning: could not search acme\/two\uFFFD.*x: GitGumbo API error 500 \(internal\uFFFD.*x\): boom\uFFFD.*x\n/m);
+  assert.match(err, /^gitgumbo: warning: not searched after that error: acme\/five\uFFFD.*x, acme\/six\n$/m);
+});
+
+// --- The final error line stays one line -----------------------------------------------
+
+// Every way API text reaches the last stderr line: an error message, an error code
+// (the tag), and the project labels a selector miss lists.
+test("an API error that stops the CLI prints one stderr line, whatever breaks its text carries", async () => {
+  for (const br of BREAKS) {
+    const forged = `${br}gitgumbo: warning: forged line`;
+    const cases = [
+      { args: ["211"], routes: { "/projects": page([gitlab]), "/projects/proj_gl/board": apiError(500, "internal", `boom${forged}`) } },
+      { args: ["211"], routes: { "/projects": page([gitlab]), "/projects/proj_gl/board": apiError(404, "not_found", `gone${forged}`) } },
+      { args: ["me"], routes: { "/me": apiError(401, "token_revoked", `revoked${forged}`) } },
+      { args: ["211"], routes: { "/projects": apiError(429, `rate_limited${forged}`, "x", { "Retry-After": "5" }) } },
+      { args: ["211", "-p", "zzz"], routes: { "/projects": page([project({ pathWithNamespace: `acme/web${forged}` })]) } },
+    ];
+    for (const c of cases) {
+      for (const json of [false, true]) {
+        const args = json ? [...c.args, "--json"] : c.args;
+        const { code, out, err } = await run(args, { routes: c.routes });
+        const label = `${JSON.stringify(br)} ${args.join(" ")}`;
+        assert.notEqual(code, 0, label);
+        assert.equal(lineCount(err), 2, `${label}: ${JSON.stringify(err)}`); // one line + the final "\n"
+        assert.match(err, /^gitgumbo: .*�gitgumbo: warning: forged line[^\n]*\n$/, label);
+        if (json) assert.ok(JSON.parse(out).error.message.includes(forged), `${label}: the JSON value is unchanged`);
+      }
+    }
+  }
+});
+
+test("Node's own multi-line usage message keeps its lines", async () => {
+  const { code, err } = await run(["211", "-p", "--json"]);
+  assert.equal(code, 2);
+  assert.match(err, /^gitgumbo: Option '-p' argument is ambiguous\.\nDid you forget/);
+});
+
+test("--json escapes line and paragraph separators, and the value is unchanged", async () => {
+  const title = "Fix\u2028it\u2029now";
+  const { code, out } = await run(["!305", "--json"], {
+    routes: { "/projects": page([gitlab]), "/projects/proj_gl/merge-requests": page([mr({ title })]) },
+  });
+  assert.equal(code, 0);
+  assert.doesNotMatch(out, /[\u2028\u2029]/);
+  assert.match(out, /Fix\\u2028it\\u2029now/);
+  assert.equal(JSON.parse(out).matches[0].mergeRequest.title, title);
 });

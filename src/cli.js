@@ -4,7 +4,7 @@
 import { parseArgs } from "node:util";
 import { createClient, CliError, EXIT } from "./api.js";
 import { lookup, parseRef } from "./lookup.js";
-import { clean, painter, renderLookup, renderMe, renderNotFound, renderProjects, toJson } from "./format.js";
+import { clean, cleanLine, painter, renderLookup, renderMe, renderNotFound, renderProjects, toJson } from "./format.js";
 
 export const DEFAULT_URL = "https://gitgumbo.com";
 
@@ -47,7 +47,7 @@ rejected, 4 rate limited, 5 network or server error.`;
 export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0" }) {
   // Known before parsing, so a usage error under --json is JSON too.
   const end = argv.indexOf("--");
-  let json = (end === -1 ? argv : argv.slice(0, end)).includes("--json");
+  let json = (end === -1 ? argv : argv.slice(0, end)).some((a) => a === "--json" || a.startsWith("--json="));
   try {
     const { values, positionals } = parseArgs({
       args: argv,
@@ -82,10 +82,10 @@ export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0"
     const selectors = values.project ?? splitList(env.GITGUMBO_PROJECT);
     const { failures, ...result } = await lookup(client, command.ref, selectors);
     for (const { project, message } of failures.failed) {
-      stderr.write(`gitgumbo: warning: could not search ${clean(project)}: ${clean(message)}\n`);
+      stderr.write(`gitgumbo: warning: could not search ${cleanLine(project)}: ${cleanLine(message)}\n`);
     }
     if (failures.skipped.length) {
-      stderr.write(`gitgumbo: warning: not searched after that error: ${clean(failures.skipped.join(", "))}\n`);
+      stderr.write(`gitgumbo: warning: not searched after that error: ${cleanLine(failures.skipped.join(", "))}\n`);
     }
     if (json) {
       print(stdout, toJson(result));
@@ -97,12 +97,17 @@ export async function main({ argv, env, fetch, stdout, stderr, version = "0.0.0"
     return result.matches.length ? EXIT.OK : EXIT.NOT_FOUND;
   } catch (err) {
     const known = err instanceof CliError;
-    const code = known ? err.exitCode : err?.code?.startsWith?.("ERR_PARSE_ARGS") ? EXIT.USAGE : EXIT.UNAVAILABLE;
-    const message = known || code === EXIT.USAGE ? err.message : `Unexpected error: ${err?.stack ?? err}`;
+    const parseError = !known && Boolean(err?.code?.startsWith?.("ERR_PARSE_ARGS"));
+    const code = known ? err.exitCode : parseError ? EXIT.USAGE : EXIT.UNAVAILABLE;
+    const message = known || parseError ? err.message : `Unexpected error: ${err?.stack ?? err}`;
     if (json) {
-      print(stdout, toJson({ error: { message, exitCode: code, status: err.status, code: err.code, retryAfter: err.retryAfter } }));
+      // Node's parse-error code is not an API code, so it is left out.
+      const apiCode = parseError ? undefined : err.code;
+      print(stdout, toJson({ error: { message, exitCode: code, status: err.status, code: apiCode, retryAfter: err.retryAfter } }));
     }
-    stderr.write(`gitgumbo: ${clean(message)}\n`);
+    // A CliError can carry API text (an error message or code, project names), so
+    // it prints on one line. Node's usage messages and a stack keep their lines.
+    stderr.write(`gitgumbo: ${known ? cleanLine(message) : clean(message)}\n`);
     return code;
   }
 }
@@ -142,7 +147,7 @@ export function config(env) {
     throw new CliError("GITGUMBO_URL must not contain a user name or password.", EXIT.USAGE);
   }
   if (u.protocol !== "https:" && !(u.protocol === "http:" && LOOPBACK.has(u.hostname))) {
-    throw new CliError("GITGUMBO_URL must be https (http only for localhost).", EXIT.USAGE);
+    throw new CliError("GITGUMBO_URL must be https (http only for localhost, 127.0.0.1 or [::1]).", EXIT.USAGE);
   }
   if (u.search || u.hash || rawUrl.includes("?") || rawUrl.includes("#")) {
     throw new CliError("GITGUMBO_URL must not contain a query (?) or fragment (#).", EXIT.USAGE);
