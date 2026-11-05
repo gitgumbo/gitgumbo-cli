@@ -77,11 +77,11 @@ gitgumbo projects            # your projects, to pick a default
 gitgumbo me                  # your firm, plan, token expiry and remaining rate limit
 ```
 
-For each linked MR or PR you get its state and draft flag, pipeline status, and review state. An **open** one also shows whether it has conflicts, its unresolved thread count, and who approved it or requested changes. Merged and closed ones show their state only.
+For each linked MR or PR you get its state and draft flag, pipeline status, and review state. An **open** one also shows whether it has conflicts, its unresolved thread count, and who approved it or requested changes. A merged or closed one shows only its state, and the draft mark if it is a draft (`merged · draft`).
 
 ### `--json`
 
-Prints `{ ref, matches, searched, incomplete }`. Each issue match is `{ project, issue, column, board, mergeRequests }`, and each MR match is `{ project, mergeRequest }`. These are the API's own objects, unchanged. An open linked MR is the full `Mr` object, with `hasConflicts`, `unresolvedThreads` and `approvedBy`. Merged and closed ones are the compact `MrCompact` object. `column` is `null` when the issue is not on the board, for example because it is closed. On an error, `--json` prints `{ error: { message, exitCode, status, code, retryAfter } }` to stdout and the message to stderr.
+Prints `{ ref, matches, searched, incomplete }`. Each issue match is `{ project, issue, column, board, mergeRequests }`, and each MR match is `{ project, mergeRequest }`. These are the API's own objects, unchanged. An open linked MR is the full `Mr` object, with `hasConflicts`, `unresolvedThreads` and `approvedBy`. Merged and closed ones are the compact `MrCompact` object. `column` is `null` when the issue is not on the board, for example because it is closed. `searched` lists only the projects whose search finished. A project whose search failed, and any project not started after that failure, is reported as a warning on stderr instead, so a run can exit 0 with a match while some projects went unsearched. On an error, `--json` prints `{ error: { message, exitCode, status, code, retryAfter } }` to stdout and the message to stderr.
 
 ### Exit codes
 

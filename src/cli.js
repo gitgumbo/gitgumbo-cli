@@ -145,7 +145,7 @@ export function config(env) {
     throw new CliError("GITGUMBO_URL must not contain a user name or password.", EXIT.USAGE);
   }
   if (u.protocol !== "https:" && !(u.protocol === "http:" && LOOPBACK.has(u.hostname))) {
-    throw new CliError("GITGUMBO_URL must be https (http only for localhost).", EXIT.USAGE);
+    throw new CliError("GITGUMBO_URL must be https (http only for localhost, 127.0.0.1 or [::1]).", EXIT.USAGE);
   }
   if (u.search || u.hash || rawUrl.includes("?") || rawUrl.includes("#")) {
     throw new CliError("GITGUMBO_URL must not contain a query (?) or fragment (#).", EXIT.USAGE);

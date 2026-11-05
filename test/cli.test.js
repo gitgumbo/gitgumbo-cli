@@ -404,7 +404,7 @@ test("GITGUMBO_URL must be https, except http on loopback", async () => {
   for (const url of ["http://gg.test", "ftp://gg.test", "file:///etc/passwd", "javascript:alert(1)", "http://10.0.0.1"]) {
     const { code, err, calls } = await run(["me"], { env: { GITGUMBO_URL: url }, routes: { "/me": me() } });
     assert.equal(code, 2, url);
-    assert.match(err, /GITGUMBO_URL must be https/);
+    assert.match(err, /GITGUMBO_URL must be https \(http only for localhost, 127\.0\.0\.1 or \[::1\]\)\./);
     assert.equal(calls.length, 0);
   }
   for (const url of ["http://localhost:3033", "http://127.0.0.1:3033", "http://[::1]:3033", "https://gg.test"]) {
