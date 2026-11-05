@@ -2,7 +2,7 @@
 
 Answer the stand-up question without opening a browser: **where is issue #211, and how are its merge requests doing?**
 
-[GitGumbo](https://gitgumbo.com) is a kanban board over your GitLab and GitHub issues. This is a small, read-only command-line client for its public API. It has no dependencies and needs Node 18.3 or later.
+[GitGumbo](https://gitgumbo.com) is a kanban board over your GitLab and GitHub issues. This is a small, read-only command-line client for its public API. It has no dependencies and needs Node 20 or later.
 
 ```console
 $ gitgumbo 211
@@ -14,7 +14,7 @@ $ gitgumbo 211
     open · pipeline failed · conflicts · 2 unresolved threads · changes requested by @bob
 
   !298  Draft: Cover expiry in e2e
-    draft · pipeline running · no conflicts · threads resolved · review pending
+    open · draft · pipeline running · no conflicts · threads resolved · review pending
 
 #211  Rate-limit headers missing on 404  GitHub acme/api
   Ready to ship · open · @dana
@@ -58,11 +58,11 @@ export GITGUMBO_TOKEN=ggb_...
 | Variable           | Meaning                                                        |
 | ------------------ | -------------------------------------------------------------- |
 | `GITGUMBO_TOKEN`   | Required. Your API token.                                      |
-| `GITGUMBO_URL`     | Optional. Defaults to `https://gitgumbo.com`.                  |
+| `GITGUMBO_URL`     | Optional. Defaults to `https://gitgumbo.com`. Must be https (http only for `localhost`, `127.0.0.1` or `[::1]`), with no user name, password, query or fragment. |
 | `GITGUMBO_PROJECT` | Optional. The default project(s) to search, comma-separated.   |
 | `NO_COLOR`         | Optional. Set it to turn colour off.                           |
 
-A project is named by its id, its `group/path`, or its name, case-insensitive. `gitgumbo projects` lists yours.
+A project is named by its id (exact), or by its `group/path` or its name (both case-insensitive). `gitgumbo projects` lists yours.
 
 ## Usage
 
